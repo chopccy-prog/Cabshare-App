@@ -2,84 +2,55 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-// ====== CONFIG (edit these) ======
-const String apiBaseUrl = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'http://127.0.0.1:5000', // change to your PC's IP if needed
-);
-const String devUserId = String.fromEnvironment(
-  'DEV_USER_ID',
-  defaultValue: '<PASTE_A_USERS_APP_UUID_HERE>',
-);
-// ==================================
+const String apiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://127.0.0.1:5000');
+const String devUserId   = String.fromEnvironment('DEV_USER_ID',   defaultValue: '1c990b95-cb96-467f-b6fe-33346feb7a76');
 
-void main() {
-  runApp(const CarShareApp());
+void main() => runApp(const App());
+
+class App extends StatelessWidget {
+  const App({super.key});
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'CarShare Dev',
+    theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
+    home: const Home(),
+  );
 }
 
-class CarShareApp extends StatelessWidget {
-  const CarShareApp({super.key});
+class Home extends StatefulWidget { const Home({super.key}); @override State<Home> createState() => _HomeState(); }
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'CarShare Dev',
-      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
-      home: const HealthScreen(),
-    );
+class _HomeState extends State<Home> {
+  String log = 'Tap buttons to test';
+
+  Future<void> pingHealth() async {
+    setState(() => log = 'Pinging /health...');
+    final res = await http.get(Uri.parse('$apiBaseUrl/health'));
+    setState(() => log = '${res.statusCode} ${res.body}');
   }
-}
 
-class HealthScreen extends StatefulWidget {
-  const HealthScreen({super.key});
-
-  @override
-  State<HealthScreen> createState() => _HealthScreenState();
-}
-
-class _HealthScreenState extends State<HealthScreen> {
-  String _status = 'Tap the button to ping backend';
-
-  Future<void> _ping() async {
-    setState(() => _status = 'Pinging...');
-    try {
-      final uri = Uri.parse('$apiBaseUrl/health');
-      final res = await http.get(uri, headers: {
-        // dev header your backend accepts (kept for future)
-        'x-user-id': devUserId,
-      });
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        setState(() => _status = '✅ ${data['ok']} @ ${data['time']}');
-      } else {
-        setState(() => _status = '❌ ${res.statusCode}: ${res.body}');
-      }
-    } catch (e) {
-      setState(() => _status = '❌ $e');
-    }
+  Future<void> whoAmI() async {
+    setState(() => log = 'GET /users/me ...');
+    final res = await http.get(Uri.parse('$apiBaseUrl/users/me'),
+      headers: { 'x-user-id': devUserId });
+    setState(() => log = '${res.statusCode} ${res.body}');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('CarShare (Web Dev)')),
+      appBar: AppBar(title: const Text('CarShare Dev')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Backend: $apiBaseUrl', style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 8),
-            Text('x-user-id: $devUserId', style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _ping,
-              child: const Text('Ping /health'),
-            ),
-            const SizedBox(height: 16),
-            Text(_status),
-          ],
-        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('API: $apiBaseUrl\nUser: $devUserId', style: const TextStyle(fontSize: 12)),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, children: [
+            ElevatedButton(onPressed: pingHealth, child: const Text('Ping /health')),
+            ElevatedButton(onPressed: whoAmI, child: const Text('GET /users/me')),
+          ]),
+          const SizedBox(height: 16),
+          Expanded(child: SingleChildScrollView(child: Text(log))),
+        ]),
       ),
     );
   }
