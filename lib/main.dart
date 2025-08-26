@@ -1,25 +1,12 @@
-import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Global crash guard so startup exceptions don't kill the isolate silently.
-  FlutterError.onError = (details) {
-    FlutterError.presentError(details);
-    debugPrint('[FlutterError] ${details.exceptionAsString()}');
-  };
-
-  runZonedGuarded(() {
-    runApp(const RealApp());
-  }, (error, stack) {
-    debugPrint('[ZoneError] $error\n$stack');
-  });
+  runApp(const CabshareApp());
 }
 
-class RealApp extends StatelessWidget {
-  const RealApp({super.key});
+class CabshareApp extends StatelessWidget {
+  const CabshareApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -30,20 +17,61 @@ class RealApp extends StatelessWidget {
         colorSchemeSeed: Colors.teal,
         useMaterial3: true,
       ),
-      home: const AppHome(),
+      home: const RootScaffold(),
     );
   }
 }
 
-class AppHome extends StatelessWidget {
-  const AppHome({super.key});
+class RootScaffold extends StatefulWidget {
+  const RootScaffold({super.key});
+
+  @override
+  State<RootScaffold> createState() => _RootScaffoldState();
+}
+
+class _RootScaffoldState extends State<RootScaffold> {
+  int _index = 0;
+
+  final _pages = const [
+    SearchScreen(),
+    PublishScreen(),
+    YourRidesScreen(),
+    InboxScreen(),
+    ProfileScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Replace this placeholder with your real home screen / navigator.
     return Scaffold(
-      appBar: AppBar(title: const Text('Cabshare')),
-      body: const Center(child: Text('App shell running')),
+      body: IndexedStack(index: _index, children: _pages),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
+          NavigationDestination(icon: Icon(Icons.add_circle_outline), label: 'Publish'),
+          NavigationDestination(icon: Icon(Icons.directions_car), label: 'Your Rides'),
+          NavigationDestination(icon: Icon(Icons.chat_bubble_outline), label: 'Inbox'),
+          NavigationDestination(icon: Icon(Icons.person_outline), label: 'Profile'),
+        ],
+      ),
     );
   }
+}
+
+// Placeholders – will wire to real flows
+class SearchScreen extends StatelessWidget { const SearchScreen({super.key});
+@override Widget build(BuildContext ctx) => const Center(child: Text('Search rides'));
+}
+class PublishScreen extends StatelessWidget { const PublishScreen({super.key});
+@override Widget build(BuildContext ctx) => const Center(child: Text('Publish ride'));
+}
+class YourRidesScreen extends StatelessWidget { const YourRidesScreen({super.key});
+@override Widget build(BuildContext ctx) => const Center(child: Text('Your rides'));
+}
+class InboxScreen extends StatelessWidget { const InboxScreen({super.key});
+@override Widget build(BuildContext ctx) => const Center(child: Text('Inbox / WhatsApp'));
+}
+class ProfileScreen extends StatelessWidget { const ProfileScreen({super.key});
+@override Widget build(BuildContext ctx) => const Center(child: Text('Profile & Login'));
 }
