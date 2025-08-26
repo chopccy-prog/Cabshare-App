@@ -1,49 +1,85 @@
 import 'package:flutter/material.dart';
 
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const CabshareApp());
+// Tabs (keep these imports if the files exist; otherwise create the tabs as we scaffolded)
+import 'features/search/search_tab.dart';
+import 'features/publish/publish_tab.dart';
+import 'features/rides/your_rides_tab.dart';
+import 'features/inbox/inbox_tab.dart';
+import 'features/profile/profile_tab.dart';
+
+/// Simple app-wide config you can read anywhere through:
+///   final cfg = AppConfig.of(context);
+///   cfg.baseUrl
+class AppConfig extends InheritedWidget {
+  const AppConfig({
+    super.key,
+    required this.baseUrl,
+    required Widget child,
+  }) : super(child: child);
+
+  /// Default points to your LAN server; override with
+  ///   --dart-define=API_BASE=http://<your-ip>:5000
+  final String baseUrl;
+
+  static AppConfig of(BuildContext context) {
+    final AppConfig? result = context.dependOnInheritedWidgetOfExactType<AppConfig>();
+    assert(result != null, 'No AppConfig found in context');
+    return result!;
+  }
+
+  @override
+  bool updateShouldNotify(AppConfig oldWidget) => baseUrl != oldWidget.baseUrl;
 }
 
-class CabshareApp extends StatelessWidget {
-  const CabshareApp({super.key});
+void main() {
+  // Allow overriding at build time without editing code.
+  const base = String.fromEnvironment('API_BASE', defaultValue: 'http://192.168.1.7:5000');
+  runApp(AppConfig(baseUrl: base, child: const MyApp()));
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Cabshare',
       debugShowCheckedModeBanner: false,
+      themeMode: ThemeMode.light,
       theme: ThemeData(
-        colorSchemeSeed: Colors.teal,
         useMaterial3: true,
+        colorSchemeSeed: Colors.green,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const RootScaffold(),
+      home: const _MainShell(),
     );
   }
 }
 
-class RootScaffold extends StatefulWidget {
-  const RootScaffold({super.key});
+/// Bottom-nav shell that keeps tab state with an IndexedStack.
+class _MainShell extends StatefulWidget {
+  const _MainShell();
 
   @override
-  State<RootScaffold> createState() => _RootScaffoldState();
+  State<_MainShell> createState() => _MainShellState();
 }
 
-class _RootScaffoldState extends State<RootScaffold> {
+class _MainShellState extends State<_MainShell> {
   int _index = 0;
 
-  final _pages = const [
-    SearchScreen(),
-    PublishScreen(),
-    YourRidesScreen(),
-    InboxScreen(),
-    ProfileScreen(),
+  late final List<Widget> _tabs = const <Widget>[
+    SearchTab(),
+    PublishTab(),
+    YourRidesTab(),
+    InboxTab(),
+    ProfileTab(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _index, children: _pages),
+      // Each tab is preserved (no rebuilds when switching).
+      body: SafeArea(child: IndexedStack(index: _index, children: _tabs)),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
@@ -51,27 +87,10 @@ class _RootScaffoldState extends State<RootScaffold> {
           NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
           NavigationDestination(icon: Icon(Icons.add_circle_outline), label: 'Publish'),
           NavigationDestination(icon: Icon(Icons.directions_car), label: 'Your Rides'),
-          NavigationDestination(icon: Icon(Icons.chat_bubble_outline), label: 'Inbox'),
+          NavigationDestination(icon: Icon(Icons.inbox_outlined), label: 'Inbox'),
           NavigationDestination(icon: Icon(Icons.person_outline), label: 'Profile'),
         ],
       ),
     );
   }
-}
-
-// Placeholders – will wire to real flows
-class SearchScreen extends StatelessWidget { const SearchScreen({super.key});
-@override Widget build(BuildContext ctx) => const Center(child: Text('Search rides'));
-}
-class PublishScreen extends StatelessWidget { const PublishScreen({super.key});
-@override Widget build(BuildContext ctx) => const Center(child: Text('Publish ride'));
-}
-class YourRidesScreen extends StatelessWidget { const YourRidesScreen({super.key});
-@override Widget build(BuildContext ctx) => const Center(child: Text('Your rides'));
-}
-class InboxScreen extends StatelessWidget { const InboxScreen({super.key});
-@override Widget build(BuildContext ctx) => const Center(child: Text('Inbox / WhatsApp'));
-}
-class ProfileScreen extends StatelessWidget { const ProfileScreen({super.key});
-@override Widget build(BuildContext ctx) => const Center(child: Text('Profile & Login'));
 }

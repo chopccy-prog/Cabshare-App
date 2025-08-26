@@ -2,27 +2,22 @@ name: cabshare_app
 description: Cabshare mobile app
 publish_to: "none"
 
-version: 0.1.0+1
-
 environment:
   sdk: ">=3.5.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
+  http: ^1.2.2
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
-  dio: ^5.5.0
-  flutter_riverpod: ^2.5.1
-
 
 flutter:
   uses-material-design: true
-  # Re-enable assets later after the app boots.
+  # If/when you add images, create an assets/ folder and uncomment:
   # assets:
   #   - assets/
-  assets:
-    - assets/
