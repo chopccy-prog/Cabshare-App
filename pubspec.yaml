@@ -1,10 +1,9 @@
 name: cabshare_app
-description: CabShare – cross-platform Flutter app (Phase 1 shell)
-publish_to: 'none'
-version: 0.1.0+1
+description: Cabshare Flutter app
+publish_to: "none"
 
 environment:
-  sdk: '>=3.5.0 <4.0.0'
+  sdk: ">=3.5.0 <4.0.0"
 
 dependencies:
   flutter:
@@ -14,8 +13,12 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
+  # Only list asset folders that actually exist in your project.
+  # Remove these lines if you don't have these folders yet.
   assets:
-    - assets/
+    - assets/images/
+    - assets/icons/
