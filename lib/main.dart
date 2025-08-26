@@ -1,56 +1,60 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+class InboxScreen extends StatelessWidget {
+  const InboxScreen({super.key});
 
-const String apiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://127.0.0.1:5000');
-const String devUserId   = String.fromEnvironment('DEV_USER_ID',   defaultValue: '1c990b95-cb96-467f-b6fe-33346feb7a76');
-
-void main() => runApp(const App());
-
-class App extends StatelessWidget {
-  const App({super.key});
-  @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'CarShare Dev',
-    theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
-    home: const Home(),
-  );
-}
-
-class Home extends StatefulWidget { const Home({super.key}); @override State<Home> createState() => _HomeState(); }
-
-class _HomeState extends State<Home> {
-  String log = 'Tap buttons to test';
-
-  Future<void> pingHealth() async {
-    setState(() => log = 'Pinging /health...');
-    final res = await http.get(Uri.parse('$apiBaseUrl/health'));
-    setState(() => log = '${res.statusCode} ${res.body}');
-  }
-
-  Future<void> whoAmI() async {
-    setState(() => log = 'GET /users/me ...');
-    final res = await http.get(Uri.parse('$apiBaseUrl/users/me'),
-      headers: { 'x-user-id': devUserId });
-    setState(() => log = '${res.statusCode} ${res.body}');
-  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('CarShare Dev')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('API: $apiBaseUrl\nUser: $devUserId', style: const TextStyle(fontSize: 12)),
-          const SizedBox(height: 12),
-          Wrap(spacing: 8, children: [
-            ElevatedButton(onPressed: pingHealth, child: const Text('Ping /health')),
-            ElevatedButton(onPressed: whoAmI, child: const Text('GET /users/me')),
-          ]),
-          const SizedBox(height: 16),
-          Expanded(child: SingleChildScrollView(child: Text(log))),
-        ]),
+    return const _CenteredPlaceholder(
+      title: 'Inbox',
+      subtitle: 'WhatsApp deeplink or in‑app chat (Phase 6)',
+    );
+  }
+}
+
+
+class ProfileScreen extends StatelessWidget {
+  const ProfileScreen({super.key});
+
+
+  @override
+  Widget build(BuildContext context) {
+    return const _CenteredPlaceholder(
+      title: 'Profile',
+      subtitle: 'Login/Verification, Vehicle, Ratings (Phase 2/6)',
+    );
+  }
+}
+
+
+class _CenteredPlaceholder extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  const _CenteredPlaceholder({required this.title, required this.subtitle});
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.directions_car, size: 72, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 16),
+            Text(title, style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text(subtitle, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Coming soon: $title')),
+              ),
+              child: const Text('Coming Soon'),
+            ),
+          ],
+        ),
       ),
     );
   }
