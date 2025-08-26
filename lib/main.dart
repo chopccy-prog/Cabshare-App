@@ -1,61 +1,49 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-class InboxScreen extends StatelessWidget {
-  const InboxScreen({super.key});
 
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
 
-  @override
-  Widget build(BuildContext context) {
-    return const _CenteredPlaceholder(
-      title: 'Inbox',
-      subtitle: 'WhatsApp deeplink or in‑app chat (Phase 6)',
-    );
-  }
+  // Global crash guard so startup exceptions don't kill the isolate silently.
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('[FlutterError] ${details.exceptionAsString()}');
+  };
+
+  runZonedGuarded(() {
+    runApp(const RealApp());
+  }, (error, stack) {
+    debugPrint('[ZoneError] $error\n$stack');
+  });
 }
 
-
-class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key});
-
+class RealApp extends StatelessWidget {
+  const RealApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const _CenteredPlaceholder(
-      title: 'Profile',
-      subtitle: 'Login/Verification, Vehicle, Ratings (Phase 2/6)',
-    );
-  }
-}
-
-
-class _CenteredPlaceholder extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  const _CenteredPlaceholder({required this.title, required this.subtitle});
-
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.directions_car, size: 72, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text(subtitle, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Coming soon: $title')),
-              ),
-              child: const Text('Coming Soon'),
-            ),
-          ],
-        ),
+    return MaterialApp(
+      title: 'Cabshare',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorSchemeSeed: Colors.teal,
+        useMaterial3: true,
       ),
+      home: const AppHome(),
+    );
+  }
+}
+
+class AppHome extends StatelessWidget {
+  const AppHome({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // TODO: Replace this placeholder with your real home screen / navigator.
+    return Scaffold(
+      appBar: AppBar(title: const Text('Cabshare')),
+      body: const Center(child: Text('App shell running')),
     );
   }
 }

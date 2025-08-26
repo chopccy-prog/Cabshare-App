@@ -1,6 +1,8 @@
 name: cabshare_app
-description: Cabshare Flutter app
+description: Cabshare mobile app
 publish_to: "none"
+
+version: 0.1.0+1
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -8,7 +10,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
@@ -17,8 +18,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # Only list asset folders that actually exist in your project.
-  # Remove these lines if you don't have these folders yet.
+  # Re-enable assets later after the app boots.
+  # assets:
+  #   - assets/
   assets:
-    - assets/images/
-    - assets/icons/
+    - assets/
