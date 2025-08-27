@@ -14,19 +14,19 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Cabshare',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.green),
-      home: const _Home(),
+      home: const HomeScaffold(),
     );
   }
 }
 
-class _Home extends StatefulWidget {
-  const _Home();
+class HomeScaffold extends StatefulWidget {
+  const HomeScaffold({super.key});
   @override
-  State<_Home> createState() => _HomeState();
+  State<HomeScaffold> createState() => _HomeScaffoldState();
 }
 
-class _HomeState extends State<_Home> {
-  int _i = 0;
+class _HomeScaffoldState extends State<HomeScaffold> {
+  int _ix = 0;
   final _tabs = const [
     SearchTab(),
     PublishTab(),
@@ -38,14 +38,14 @@ class _HomeState extends State<_Home> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _tabs[_i],
+      body: _tabs[_ix],
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _i,
-        onDestinationSelected: (v) => setState(() => _i = v),
+        selectedIndex: _ix,
+        onDestinationSelected: (i) => setState(() => _ix = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
-          NavigationDestination(icon: Icon(Icons.add_circle_outline), label: 'Publish'),
-          NavigationDestination(icon: Icon(Icons.directions_car), label: 'Your Rides'),
+          NavigationDestination(icon: Icon(Icons.add_circle), label: 'Publish'),
+          NavigationDestination(icon: Icon(Icons.directions_car), label: 'Rides'),
           NavigationDestination(icon: Icon(Icons.inbox), label: 'Inbox'),
           NavigationDestination(icon: Icon(Icons.person), label: 'Profile'),
         ],

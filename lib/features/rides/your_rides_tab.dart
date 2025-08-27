@@ -1,8 +1,8 @@
 // lib/features/rides/your_rides_tab.dart
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../../services/api.dart';
+import '../../models/ride.dart';
+import '../../services/api_client.dart';
+import 'ride_details_page.dart';
 
 class YourRidesTab extends StatefulWidget {
   const YourRidesTab({super.key});
@@ -11,51 +11,54 @@ class YourRidesTab extends StatefulWidget {
 }
 
 class _YourRidesTabState extends State<YourRidesTab> {
-  late Future<List<Map<String, dynamic>>> _future;
+  bool _loading = true;
+  String? _error;
+  List<Ride> _rides = [];
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _load();
   }
 
-  Future<List<Map<String, dynamic>>> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final myIds = prefs.getStringList('myRideIds') ?? <String>[];
-    final all = await Api.getAllRides();
-    if (myIds.isEmpty) return [];
-    return all.where((r) => myIds.contains(r['id']?.toString())).toList();
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      // “All rides” listing by calling search without filters isn’t supported,
+      // so we fetch “today’s” between any cities as a simple demo.
+      // Replace with a GET /rides/mine when backend is ready.
+      final today = DateTime.now();
+      _rides = await ApiClient.I.searchRides(from: '', to: '', date: today);
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Your Rides')),
-      body: FutureBuilder(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(child: Text('Error: ${snap.error}'));
-          }
-          final rides = snap.data as List<Map<String, dynamic>>;
-          if (rides.isEmpty) {
-            return const Center(child: Text('No rides yet. Publish one!'));
-          }
-          return ListView.separated(
-            itemCount: rides.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) {
-              final r = rides[i];
-              final dt = '${r['date']} ${r['time']}';
-              return ListTile(
-                leading: const Icon(Icons.directions_car),
-                title: Text('${r['from']} → ${r['to']}'),
-                subtitle: Text('$dt · ${r['seats']} seats · ₹${r['price']}'),
-              );
-            },
+      appBar: AppBar(title: const Text('Your rides')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? Center(child: Text('Error: $_error'))
+          : ListView.builder(
+        itemCount: _rides.length,
+        itemBuilder: (_, i) {
+          final r = _rides[i];
+          return Card(
+            child: ListTile(
+              title: Text('${r.fromCity} → ${r.toCity} • ₹${r.price}'),
+              subtitle: Text(r.prettyDate),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => RideDetailsPage(ride: r)),
+              ),
+            ),
           );
         },
       ),

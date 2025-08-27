@@ -5,7 +5,7 @@ class InboxTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold( // <- not const
+    return Scaffold(
       appBar: AppBar(title: const Text('Inbox')),
       body: const Center(child: Text('Coming soon')),
     );

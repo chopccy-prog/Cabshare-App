@@ -5,7 +5,7 @@ class ProfileTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold( // <- not const
+    return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: const Center(child: Text('Coming soon')),
     );
