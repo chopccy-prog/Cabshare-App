@@ -1,123 +1,98 @@
-// lib/features/search/search_tab.dart
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import '../../models/ride.dart';
-import '../../services/api_client.dart';
-import '../rides/ride_details_page.dart';
+import '../../core/api_client.dart';
+import '../../core/models/ride.dart';
 
 class SearchTab extends StatefulWidget {
   const SearchTab({super.key});
-
   @override
   State<SearchTab> createState() => _SearchTabState();
 }
 
 class _SearchTabState extends State<SearchTab> {
-  final _fromCtrl = TextEditingController();
-  final _toCtrl = TextEditingController();
-  DateTime _date = DateTime.now();
-  bool _loading = false;
+  final _api = ApiClient();
+  final _from = TextEditingController();
+  final _to = TextEditingController();
+  DateTime? _date;
   List<Ride> _results = [];
-  String? _error;
+  bool _loading = false;
 
   Future<void> _pickDate() async {
     final d = await showDatePicker(
       context: context,
       firstDate: DateTime.now().subtract(const Duration(days: 1)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      initialDate: _date,
+      initialDate: _date ?? DateTime.now(),
     );
-    if (d != null) setState(() => _date = d);
+    if (d == null) return;
+    final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    if (t == null) return;
+    setState(() => _date = DateTime(d.year, d.month, d.day, t.hour, t.minute));
   }
 
   Future<void> _search() async {
-    FocusScope.of(context).unfocus();
-    setState(() {
-      _loading = true;
-      _error = null;
-      _results = [];
-    });
+    setState(() => _loading = true);
     try {
-      final rides = await ApiClient.I.searchRides(
-        from: _fromCtrl.text.trim(),
-        to: _toCtrl.text.trim(),
+      final list = await _api.search(
+        from: _from.text.trim().isEmpty ? null : _from.text.trim(),
+        to: _to.text.trim().isEmpty ? null : _to.text.trim(),
         date: _date,
       );
-      setState(() => _results = rides);
+      setState(() => _results = list);
     } catch (e) {
-      setState(() => _error = e.toString());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Search failed: $e')),
-        );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Search failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  Future<void> _book(Ride r) async {
+    try {
+      await _api.book(r.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Booked ride ${r.from} → ${r.to} on ${r.when}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Booking failed: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final dateLabel = DateFormat('EEE, d MMM').format(_date);
     return Scaffold(
       appBar: AppBar(title: const Text('Search rides')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(
-            controller: _fromCtrl,
-            decoration: const InputDecoration(
-              labelText: 'From',
-              border: OutlineInputBorder(),
-            ),
-          ),
+          TextField(controller: _from, decoration: const InputDecoration(labelText: 'From city')),
           const SizedBox(height: 12),
-          TextField(
-            controller: _toCtrl,
-            decoration: const InputDecoration(
-              labelText: 'To',
-              border: OutlineInputBorder(),
-            ),
-          ),
+          TextField(controller: _to, decoration: const InputDecoration(labelText: 'To city')),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: Text('Date: $dateLabel')),
-              FilledButton.tonal(
-                onPressed: _pickDate,
-                child: const Text('Change'),
+              Expanded(
+                child: Text(_date == null ? 'When: (optional)' : 'When: $_date'),
               ),
+              OutlinedButton(onPressed: _pickDate, child: const Text('Pick')),
             ],
           ),
           const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _loading ? null : _search,
-            child: _loading ? const CircularProgressIndicator() : const Text('Search'),
-          ),
-          const SizedBox(height: 20),
-
-          if (_error != null)
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-
-          if (_results.isEmpty && !_loading && _error == null)
-            const Center(child: Padding(
-              padding: EdgeInsets.only(top: 40),
-              child: Text('No results yet. Search to see rides.'),
-            )),
-
+          FilledButton(onPressed: _loading ? null : _search, child: const Text('Search')),
+          const SizedBox(height: 16),
+          if (_loading) const Center(child: CircularProgressIndicator()),
           for (final r in _results)
             Card(
               child: ListTile(
-                title: Text('${r.fromCity} → ${r.toCity} • ₹${r.price}'),
-                subtitle: Text('${r.prettyDate} • seats ${r.seats}'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => RideDetailsPage(ride: r),
-                  ));
-                },
+                title: Text('${r.from} → ${r.to}'),
+                subtitle: Text('${r.driverName} • ₹${r.price} • ${r.seats} seats • ${r.when}'),
+                trailing: IconButton(icon: const Icon(Icons.check_circle), onPressed: () => _book(r)),
               ),
             ),
+          if (!_loading && _results.isEmpty) const Center(child: Padding(
+              padding: EdgeInsets.all(12.0), child: Text('No rides yet. Try different filters.'))),
         ],
       ),
     );

@@ -1,8 +1,6 @@
-// lib/features/rides/your_rides_tab.dart
 import 'package:flutter/material.dart';
-import '../../models/ride.dart';
-import '../../services/api_client.dart';
-import 'ride_details_page.dart';
+import '../../core/api_client.dart';
+import '../../core/models/ride.dart';
 
 class YourRidesTab extends StatefulWidget {
   const YourRidesTab({super.key});
@@ -11,29 +9,24 @@ class YourRidesTab extends StatefulWidget {
 }
 
 class _YourRidesTabState extends State<YourRidesTab> {
-  bool _loading = true;
-  String? _error;
+  final _api = ApiClient();
+  final _driverName = TextEditingController(); // simple filter
   List<Ride> _rides = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  bool _loading = false;
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (_driverName.text.trim().isEmpty) {
+      setState(() => _rides = []);
+      return;
+    }
+    setState(() => _loading = true);
     try {
-      // “All rides” listing by calling search without filters isn’t supported,
-      // so we fetch “today’s” between any cities as a simple demo.
-      // Replace with a GET /rides/mine when backend is ready.
-      final today = DateTime.now();
-      _rides = await ApiClient.I.searchRides(from: '', to: '', date: today);
+      final list = await _api.myRides(driverName: _driverName.text.trim());
+      setState(() => _rides = list);
     } catch (e) {
-      _error = e.toString();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Load failed: $e')));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -43,24 +36,22 @@ class _YourRidesTabState extends State<YourRidesTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Your rides')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(child: Text('Error: $_error'))
-          : ListView.builder(
-        itemCount: _rides.length,
-        itemBuilder: (_, i) {
-          final r = _rides[i];
-          return Card(
-            child: ListTile(
-              title: Text('${r.fromCity} → ${r.toCity} • ₹${r.price}'),
-              subtitle: Text(r.prettyDate),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => RideDetailsPage(ride: r)),
-              ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(controller: _driverName, decoration: const InputDecoration(labelText: 'Filter by driver name')),
+          const SizedBox(height: 8),
+          FilledButton(onPressed: _load, child: const Text('Load')),
+          const SizedBox(height: 12),
+          if (_loading) const Center(child: CircularProgressIndicator()),
+          for (final r in _rides)
+            ListTile(
+              title: Text('${r.from} → ${r.to}'),
+              subtitle: Text('${r.when} • ₹${r.price} • seats ${r.seats}'),
             ),
-          );
-        },
+          if (!_loading && _rides.isEmpty) const Center(child: Padding(
+              padding: EdgeInsets.all(12.0), child: Text('No rides. Publish one!'))),
+        ],
       ),
     );
   }

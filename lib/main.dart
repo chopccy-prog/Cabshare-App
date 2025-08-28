@@ -14,19 +14,19 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Cabshare',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.green),
-      home: const HomeScaffold(),
+      home: const Home(),
     );
   }
 }
 
-class HomeScaffold extends StatefulWidget {
-  const HomeScaffold({super.key});
+class Home extends StatefulWidget {
+  const Home({super.key});
   @override
-  State<HomeScaffold> createState() => _HomeScaffoldState();
+  State<Home> createState() => _HomeState();
 }
 
-class _HomeScaffoldState extends State<HomeScaffold> {
-  int _ix = 0;
+class _HomeState extends State<Home> {
+  int _i = 0;
   final _tabs = const [
     SearchTab(),
     PublishTab(),
@@ -38,10 +38,10 @@ class _HomeScaffoldState extends State<HomeScaffold> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _tabs[_ix],
+      body: _tabs[_i],
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _ix,
-        onDestinationSelected: (i) => setState(() => _ix = i),
+        selectedIndex: _i,
+        onDestinationSelected: (v) => setState(() => _i = v),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
           NavigationDestination(icon: Icon(Icons.add_circle), label: 'Publish'),

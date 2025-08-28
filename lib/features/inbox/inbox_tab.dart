@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 
 class InboxTab extends StatelessWidget {
   const InboxTab({super.key});
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Inbox')),
-      body: const Center(child: Text('Coming soon')),
+    return const Scaffold(
+      appBar: null,
+      body: Center(child: Text('Inbox (coming soon)')),
     );
   }
 }
