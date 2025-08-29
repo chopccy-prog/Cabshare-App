@@ -1,34 +1,36 @@
+// lib/features/search/search_tab.dart
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
-import '../../core/models/ride.dart';
 import '../../core/config_service.dart';
-
+import '../../models/ride.dart';
+import 'package:intl/intl.dart';
 
 class SearchTab extends StatefulWidget {
   const SearchTab({super.key});
+
   @override
   State<SearchTab> createState() => _SearchTabState();
 }
 
 class _SearchTabState extends State<SearchTab> {
   final _api = ApiClient(ConfigService.instance);
+
   final _from = TextEditingController();
   final _to = TextEditingController();
   DateTime? _date;
+
   List<Ride> _results = [];
   bool _loading = false;
 
   Future<void> _pickDate() async {
+    final now = DateTime.now();
     final d = await showDatePicker(
       context: context,
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      initialDate: _date ?? DateTime.now(),
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 2),
+      initialDate: _date ?? now,
     );
-    if (d == null) return;
-    final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-    if (t == null) return;
-    setState(() => _date = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+    if (d != null) setState(() => _date = d);
   }
 
   Future<void> _search() async {
@@ -41,9 +43,10 @@ class _SearchTabState extends State<SearchTab> {
       );
       setState(() => _results = list);
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Search failed: $e')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Search failed: $e')),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -54,48 +57,78 @@ class _SearchTabState extends State<SearchTab> {
       await _api.book(r.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Booked ride ${r.from} → ${r.to} on ${r.when}')),
+        const SnackBar(content: Text('Booked!')),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Booking failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Booking failed: $e')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Search rides')),
-      body: ListView(
+    final df = DateFormat('EEE, d MMM');
+    return SafeArea(
+      child: Padding(
         padding: const EdgeInsets.all(16),
-        children: [
-          TextField(controller: _from, decoration: const InputDecoration(labelText: 'From city')),
-          const SizedBox(height: 12),
-          TextField(controller: _to, decoration: const InputDecoration(labelText: 'To city')),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Text(_date == null ? 'When: (optional)' : 'When: $_date'),
-              ),
-              OutlinedButton(onPressed: _pickDate, child: const Text('Pick')),
-            ],
-          ),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: _loading ? null : _search, child: const Text('Search')),
-          const SizedBox(height: 16),
-          if (_loading) const Center(child: CircularProgressIndicator()),
-          for (final r in _results)
-            Card(
-              child: ListTile(
-                title: Text('${r.from} → ${r.to}'),
-                subtitle: Text('${r.driverName} • ₹${r.price} • ${r.seats} seats • ${r.when}'),
-                trailing: IconButton(icon: const Icon(Icons.check_circle), onPressed: () => _book(r)),
+        child: Column(
+          children: [
+            TextField(
+              controller: _from,
+              decoration: const InputDecoration(labelText: 'From'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _to,
+              decoration: const InputDecoration(labelText: 'To'),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _pickDate,
+                    child: Text(_date == null ? 'Pick date' : df.format(_date!)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _loading ? null : _search,
+                  child: _loading
+                      ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                      : const Text('Search'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _results.isEmpty
+                  ? const Center(child: Text('No results'))
+                  : ListView.separated(
+                itemCount: _results.length,
+                separatorBuilder: (_, __) => const Divider(),
+                itemBuilder: (_, i) {
+                  final r = _results[i];
+                  return ListTile(
+                    title: Text('${r.from} → ${r.to}'),
+                    subtitle: Text(
+                        '${DateFormat('EEE, d MMM – HH:mm').format(r.when)} · ₹${r.price} · ${r.seats} seats · ${r.driverName}'),
+                    trailing: FilledButton(
+                      onPressed: () => _book(r),
+                      child: const Text('Book'),
+                    ),
+                  );
+                },
               ),
             ),
-          if (!_loading && _results.isEmpty) const Center(child: Padding(
-              padding: EdgeInsets.all(12.0), child: Text('No rides yet. Try different filters.'))),
-        ],
+          ],
+        ),
       ),
     );
   }

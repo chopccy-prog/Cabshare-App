@@ -1,8 +1,9 @@
+// lib/features/rides/your_rides_tab.dart
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
-import '../../core/models/ride.dart';
 import '../../core/config_service.dart';
-
+import '../../models/ride.dart';
+import 'package:intl/intl.dart';
 
 class YourRidesTab extends StatefulWidget {
   const YourRidesTab({super.key});
@@ -12,23 +13,20 @@ class YourRidesTab extends StatefulWidget {
 
 class _YourRidesTabState extends State<YourRidesTab> {
   final _api = ApiClient(ConfigService.instance);
-  final _driverName = TextEditingController(); // simple filter
+  final _driverName = TextEditingController();
   List<Ride> _rides = [];
   bool _loading = false;
 
   Future<void> _load() async {
-    if (_driverName.text.trim().isEmpty) {
-      setState(() => _rides = []);
-      return;
-    }
     setState(() => _loading = true);
     try {
-      final list = await _api.myRides(driverName: _driverName.text.trim());
+      final list = await _api.myRides(
+        driverName: _driverName.text.trim().isEmpty ? null : _driverName.text.trim(),
+      );
       setState(() => _rides = list);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Load failed: $e')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -36,24 +34,33 @@ class _YourRidesTabState extends State<YourRidesTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Your rides')),
-      body: ListView(
+    final df = DateFormat('EEE, d MMM – HH:mm');
+    return SafeArea(
+      child: Padding(
         padding: const EdgeInsets.all(16),
-        children: [
-          TextField(controller: _driverName, decoration: const InputDecoration(labelText: 'Filter by driver name')),
-          const SizedBox(height: 8),
-          FilledButton(onPressed: _load, child: const Text('Load')),
-          const SizedBox(height: 12),
-          if (_loading) const Center(child: CircularProgressIndicator()),
-          for (final r in _rides)
-            ListTile(
-              title: Text('${r.from} → ${r.to}'),
-              subtitle: Text('${r.when} • ₹${r.price} • seats ${r.seats}'),
+        child: Column(
+          children: [
+            TextField(controller: _driverName, decoration: const InputDecoration(labelText: 'Driver name (optional)')),
+            const SizedBox(height: 8),
+            FilledButton(onPressed: _loading ? null : _load, child: const Text('Load my rides')),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _rides.isEmpty
+                  ? const Center(child: Text('No rides'))
+                  : ListView.separated(
+                itemCount: _rides.length,
+                separatorBuilder: (_, __) => const Divider(),
+                itemBuilder: (_, i) {
+                  final r = _rides[i];
+                  return ListTile(
+                    title: Text('${r.from} → ${r.to}'),
+                    subtitle: Text('${df.format(r.when)} · ₹${r.price} · ${r.seats} seats · ${r.driverName}'),
+                  );
+                },
+              ),
             ),
-          if (!_loading && _rides.isEmpty) const Center(child: Padding(
-              padding: EdgeInsets.all(12.0), child: Text('No rides. Publish one!'))),
-        ],
+          ],
+        ),
       ),
     );
   }

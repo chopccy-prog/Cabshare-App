@@ -1,72 +1,73 @@
 // lib/models/ride.dart
-import 'package:intl/intl.dart';
-
 class Ride {
   final String id;
-  final String driverName;
-  final String fromCity;
-  final double? fromLat;
-  final double? fromLng;
-  final String toCity;
-  final double? toLat;
-  final double? toLng;
+  final String from;
+  final String to;
   final DateTime when;
-  final int price;
   final int seats;
+  final int price;
+  final String driverName;
+  final String? phone;
   final String? car;
 
   Ride({
     required this.id,
-    required this.driverName,
-    required this.fromCity,
-    this.fromLat,
-    this.fromLng,
-    required this.toCity,
-    this.toLat,
-    this.toLng,
+    required this.from,
+    required this.to,
     required this.when,
-    required this.price,
     required this.seats,
+    required this.price,
+    required this.driverName,
+    this.phone,
     this.car,
   });
 
-  factory Ride.fromJson(Map<String, dynamic> j) => Ride(
-    id: (j['id'] ?? j['_id'] ?? '').toString(),
-    driverName: j['driverName'] ?? j['driver'] ?? 'Driver',
-    fromCity: j['fromCity'] ?? j['from']?['city'] ?? j['from'] ?? '',
-    fromLat: (j['fromLat'] ?? j['from']?['lat']) == null
-        ? null
-        : (j['fromLat'] ?? j['from']?['lat']).toDouble(),
-    fromLng: (j['fromLng'] ?? j['from']?['lng']) == null
-        ? null
-        : (j['fromLng'] ?? j['from']?['lng']).toDouble(),
-    toCity: j['toCity'] ?? j['to']?['city'] ?? j['to'] ?? '',
-    toLat: (j['toLat'] ?? j['to']?['lat']) == null
-        ? null
-        : (j['toLat'] ?? j['to']?['lat']).toDouble(),
-    toLng: (j['toLng'] ?? j['to']?['lng']) == null
-        ? null
-        : (j['toLng'] ?? j['to']?['lng']).toDouble(),
-    when: DateTime.parse(j['when'] ?? j['date']),
-    price: j['price'] is String ? int.tryParse(j['price']) ?? 0 : (j['price'] ?? 0),
-    seats: j['seats'] is String ? int.tryParse(j['seats']) ?? 1 : (j['seats'] ?? 1),
-    car: j['car'],
-  );
+  factory Ride.fromJson(Map<String, dynamic> json) {
+    // Support id or _id
+    final id = (json['id'] ?? json['_id'] ?? '').toString();
+
+    // Prefer 'when' (ISO), else combine 'date' + optional 'time'
+    DateTime? when;
+    final whenStr = json['when']?.toString();
+    if (whenStr != null && whenStr.isNotEmpty) {
+      when = DateTime.tryParse(whenStr);
+    }
+    if (when == null && json['date'] != null) {
+      final dateStr = json['date'].toString(); // yyyy-MM-dd expected
+      final timeStr = (json['time'] ?? '00:00').toString(); // HH:mm
+      when = DateTime.tryParse('${dateStr}T$timeStr:00');
+      when ??= DateTime.tryParse('${dateStr}T00:00:00'); // fallback if only date
+    }
+    when ??= DateTime.now();
+
+    return Ride(
+      id: id,
+      from: json['from']?.toString() ?? '',
+      to: json['to']?.toString() ?? '',
+      when: when,
+      seats: _toInt(json['seats'], 0),
+      price: _toInt(json['price'], 0),
+      driverName: json['driverName']?.toString() ?? '',
+      phone: json['phone']?.toString(),
+      car: json['car']?.toString(),
+    );
+  }
+
+  static int _toInt(Object? v, int fallback) {
+    if (v == null) return fallback;
+    if (v is int) return v;
+    return int.tryParse(v.toString()) ?? fallback;
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'driverName': driverName,
-    'fromCity': fromCity,
-    'fromLat': fromLat,
-    'fromLng': fromLng,
-    'toCity': toCity,
-    'toLat': toLat,
-    'toLng': toLng,
+    'from': from,
+    'to': to,
     'when': when.toIso8601String(),
-    'price': price,
     'seats': seats,
-    'car': car,
+    'price': price,
+    'driverName': driverName,
+    if (phone != null) 'phone': phone,
+    if (car != null) 'car': car,
   };
-
-  String get prettyDate => DateFormat('EEE, d MMM • h:mm a').format(when);
 }

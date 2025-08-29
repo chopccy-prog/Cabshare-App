@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+
 import 'config_service.dart';
 import '../models/ride.dart';
 
@@ -25,20 +26,19 @@ class ApiClient {
     }
   }
 
-  /// SEARCH rides
-  /// Expected backend: GET /rides?from=..&to=..&date=YYYY-MM-DD
+  /// Accepts nullable filters so your UI can pass nulls safely.
+  /// Backend: GET /rides?from=&to=&date=YYYY-MM-DD
   Future<List<Ride>> search({
-    required String from,
-    required String to,
-    required DateTime date,
+    String? from,
+    String? to,
+    DateTime? date,
   }) async {
-    final dateStr = DateFormat('yyyy-MM-dd').format(date);
-    final r = await http.get(_u('/rides', {
-      'from': from,
-      'to': to,
-      'date': dateStr,
-    }));
+    final q = <String, String>{};
+    if (from != null && from.trim().isNotEmpty) q['from'] = from.trim();
+    if (to != null && to.trim().isNotEmpty) q['to'] = to.trim();
+    if (date != null) q['date'] = DateFormat('yyyy-MM-dd').format(date);
 
+    final r = await http.get(_u('/rides', q.isEmpty ? null : q));
     if (r.statusCode != 200) {
       throw Exception('Search failed (${r.statusCode}): ${r.body}');
     }
@@ -48,31 +48,24 @@ class ApiClient {
         ? (data['rides'] as List)
         : (data as List);
     return list.map((e) => Ride.fromJson(e as Map<String, dynamic>)).toList();
-    // Your Ride.fromJson should handle id/_id + when/date+time combos.
   }
 
-  /// PUBLISH ride
-  /// Expected backend: POST /rides (JSON body)
-  /// Body fields we send: from, to, when (ISO), seats (int), price (int),
-  /// driverName, phone (optional), car (optional)
+  /// Matches your tab usage: publish(when: ...)
+  /// Backend: POST /rides  with JSON body
   Future<Ride> publish({
     required String from,
     required String to,
-    required DateTime date,
-    required DateTime timeOfDayLocal, // pass date+time combined (local)
+    required DateTime when,
     required int seats,
     required int price,
     required String driverName,
     String? phone,
     String? car,
   }) async {
-    // Combine date + time-of-day into one DateTime if caller passed separate parts.
-    final whenIso = timeOfDayLocal.toIso8601String();
-
     final body = {
       'from': from.trim(),
       'to': to.trim(),
-      'when': whenIso,
+      'when': when.toIso8601String(),
       'seats': seats,
       'price': price,
       'driverName': driverName.trim(),
@@ -97,8 +90,7 @@ class ApiClient {
     return Ride.fromJson(rideJson);
   }
 
-  /// BOOK a ride
-  /// Expected backend: POST /rides/:id/book  (adjust below if your backend differs)
+  /// Booking path: POST /rides/:id/book
   Future<void> book(String rideId) async {
     final r = await http.post(
       _u('/rides/$rideId/book'),
@@ -109,14 +101,13 @@ class ApiClient {
     }
   }
 
-  /// YOUR RIDES (driver’s published rides or booking history)
-  /// Example backend: GET /rides?driverName=John
+  /// My rides (simple filter by driverName if provided)
   Future<List<Ride>> myRides({String? driverName}) async {
-    final r = await http.get(_u('/rides', {
-      if (driverName != null && driverName.trim().isNotEmpty)
-        'driverName': driverName.trim(),
-    }));
-
+    final q = <String, String>{};
+    if (driverName != null && driverName.trim().isNotEmpty) {
+      q['driverName'] = driverName.trim();
+    }
+    final r = await http.get(_u('/rides', q.isEmpty ? null : q));
     if (r.statusCode != 200) {
       throw Exception('My rides failed (${r.statusCode}): ${r.body}');
     }
