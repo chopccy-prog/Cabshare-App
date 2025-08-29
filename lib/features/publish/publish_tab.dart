@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
+import '../../core/config_service.dart';
 
 class PublishTab extends StatefulWidget {
   const PublishTab({super.key});
@@ -8,8 +9,7 @@ class PublishTab extends StatefulWidget {
 }
 
 class _PublishTabState extends State<PublishTab> {
-  final _api = ApiClient();
-
+  final _api = ApiClient(ConfigService.instance);
   final _driver = TextEditingController();
   final _from = TextEditingController();
   final _to = TextEditingController();

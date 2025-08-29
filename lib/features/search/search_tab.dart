@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/models/ride.dart';
+import '../../core/config_service.dart';
+
 
 class SearchTab extends StatefulWidget {
   const SearchTab({super.key});
@@ -9,7 +11,7 @@ class SearchTab extends StatefulWidget {
 }
 
 class _SearchTabState extends State<SearchTab> {
-  final _api = ApiClient();
+  final _api = ApiClient(ConfigService.instance);
   final _from = TextEditingController();
   final _to = TextEditingController();
   DateTime? _date;

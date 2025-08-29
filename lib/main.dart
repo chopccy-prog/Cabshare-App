@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'core/config_service.dart';
 import 'features/search/search_tab.dart';
 import 'features/publish/publish_tab.dart';
 import 'features/rides/your_rides_tab.dart';

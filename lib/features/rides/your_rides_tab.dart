@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/models/ride.dart';
+import '../../core/config_service.dart';
+
 
 class YourRidesTab extends StatefulWidget {
   const YourRidesTab({super.key});
@@ -9,7 +11,7 @@ class YourRidesTab extends StatefulWidget {
 }
 
 class _YourRidesTabState extends State<YourRidesTab> {
-  final _api = ApiClient();
+  final _api = ApiClient(ConfigService.instance);
   final _driverName = TextEditingController(); // simple filter
   List<Ride> _rides = [];
   bool _loading = false;
