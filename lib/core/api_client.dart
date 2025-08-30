@@ -1,82 +1,134 @@
+// lib/core/api_client.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+
 import '../models/ride.dart';
+import '../models/pool_type.dart';
 
 class ApiClient {
   final String baseUrl;
   ApiClient({required this.baseUrl});
 
-  Uri _u(String path, [Map<String, String>? q]) =>
-      Uri.parse('$baseUrl$path').replace(queryParameters: q);
+  Uri _u(String path, [Map<String, dynamic>? q]) =>
+      Uri.parse('$baseUrl$path').replace(
+        queryParameters: q?.map((k, v) => MapEntry(k, v?.toString() ?? '')),
+      );
 
+  // /search -> { ok, rides: [...] }
   Future<List<Ride>> search({
     String? from,
     String? to,
     DateTime? date,
-    String? pool, // NEW: "private" | "commercial" | "fullcar"
+    PoolType? pool,
+    String? driverName,
   }) async {
-    final q = <String, String>{};
+    final q = <String, dynamic>{};
     if (from != null && from.isNotEmpty) q['from'] = from;
     if (to != null && to.isNotEmpty) q['to'] = to;
-    if (date != null) q['date'] = date.toIso8601String();
-    if (pool != null && pool.isNotEmpty) q['pool'] = pool; // add to query
+    if (date != null) q['date'] = date.toIso8601String().substring(0, 10);
+    if (pool != null) q['pool'] = pool.apiValue;
+    if (driverName != null && driverName.isNotEmpty) {
+      q['driverName'] = driverName;
+    }
 
     final res = await http.get(_u('/search', q));
-    _ensureOk(res);
-    final data = jsonDecode(res.body);
-    final list = (data is List ? data : (data['rides'] ?? [])) as List;
+    if (res.statusCode != 200) {
+      throw Exception('Search failed: ${res.statusCode} ${res.body}');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = (body['rides'] as List? ?? []);
     return list.map((e) => Ride.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<void> publish({
+  // Publish ride: NO phone/driverName here.
+  Future<Ride> publish({
     required String from,
     required String to,
     required DateTime when,
-    required String driverName,
-    required String phone,            // <— added
-    double? price,
-    int? seats,
+    required int seats,
+    required num price,
+    String? notes,
+    PoolType pool = PoolType.private,
   }) async {
-    final body = {
+    final payload = {
       'from': from,
       'to': to,
       'when': when.toIso8601String(),
-      'driverName': driverName,
-      'phone': phone,                  // <— sent to backend
-      if (price != null) 'price': price,
-      if (seats != null) 'seats': seats,
+      'seats': seats,
+      'price': price,
+      'pool': pool.apiValue,
     };
+    if (notes != null && notes.isNotEmpty) payload['notes'] = notes;
 
     final res = await http.post(
       _u('/rides'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
+      body: jsonEncode(payload),
     );
-    _ensureOk(res);
+    if (res.statusCode != 200) {
+      throw Exception('Publish failed: ${res.statusCode} ${res.body}');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final ride = body['ride'] as Map<String, dynamic>;
+    return Ride.fromJson(ride);
   }
 
+  // /rides -> { ok, rides: [...] }
   Future<List<Ride>> myRides({String? driverName}) async {
-    final q = <String, String>{};
-    if (driverName != null && driverName.isNotEmpty) q['driverName'] = driverName;
-
+    final q = <String, dynamic>{};
+    if (driverName != null && driverName.isNotEmpty) {
+      q['driverName'] = driverName;
+    }
     final res = await http.get(_u('/rides', q));
-    _ensureOk(res);
-    final data = jsonDecode(res.body);
-    final list = (data is List ? data : (data['rides'] ?? [])) as List;
+    if (res.statusCode != 200) {
+      throw Exception('MyRides failed: ${res.statusCode} ${res.body}');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = (body['rides'] as List? ?? []);
     return list.map((e) => Ride.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  // book supports both /book/:id and /rides/:id/book; we’ll use the first.
   Future<void> book(String rideId) async {
-    final res = await http.post(
-      _u('/rides/$rideId/book'),
-      headers: {'Content-Type': 'application/json'},
-    );
-    _ensureOk(res);
+    final res = await http.post(_u('/book/$rideId'));
+    if (res.statusCode != 200) {
+      throw Exception('Book failed: ${res.statusCode} ${res.body}');
+    }
   }
 
-  void _ensureOk(http.Response res) {
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw Exception('HTTP ${res.statusCode}: ${res.body}');
+  // ---- chat (kept simple; matches backend) ----
+  Future<List<Map<String, dynamic>>> conversations({String? user}) async {
+    final q = <String, dynamic>{};
+    if (user != null && user.isNotEmpty) q['user'] = user;
+    final res = await http.get(_u('/conversations', q));
+    if (res.statusCode != 200) {
+      throw Exception('Conversations failed: ${res.statusCode}');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (body['conversations'] as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> messages(String conversationId) async {
+    final res = await http.get(_u('/messages', {'conversationId': conversationId}));
+    if (res.statusCode != 200) {
+      throw Exception('Messages failed: ${res.statusCode}');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (body['messages'] as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> sendMessage({
+    required String conversationId,
+    required String from,
+    required String text,
+  }) async {
+    final res = await http.post(
+      _u('/messages'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'conversationId': conversationId, 'from': from, 'text': text}),
+    );
+    if (res.statusCode != 200) {
+      throw Exception('sendMessage failed: ${res.statusCode}');
     }
   }
 }

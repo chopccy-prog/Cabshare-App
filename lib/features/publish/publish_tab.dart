@@ -1,6 +1,7 @@
+// lib/features/publish/publish_tab.dart
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
-import '../../models/ride.dart';
+import '../../models/pool_type.dart';
 
 class PublishTab extends StatefulWidget {
   final ApiClient api;
@@ -11,21 +12,21 @@ class PublishTab extends StatefulWidget {
 }
 
 class _PublishTabState extends State<PublishTab> {
-  final _form = GlobalKey<FormState>();
   final _from = TextEditingController();
   final _to = TextEditingController();
-  final _driverName = TextEditingController();
-  final _phone = TextEditingController();
-  final _price = TextEditingController();
+  final _notes = TextEditingController();
+  final _price = TextEditingController(text: '0');
   final _seats = TextEditingController(text: '1');
+
   DateTime? _when;
+  PoolType _pool = PoolType.private;
+  bool _busy = false;
 
   @override
   void dispose() {
     _from.dispose();
     _to.dispose();
-    _driverName.dispose();
-    _phone.dispose();
+    _notes.dispose();
     _price.dispose();
     _seats.dispose();
     super.dispose();
@@ -34,44 +35,63 @@ class _PublishTabState extends State<PublishTab> {
   Future<void> _pickDateTime() async {
     final d = await showDatePicker(
       context: context,
+      initialDate: DateTime.now().add(const Duration(days: 1)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      initialDate: DateTime.now(),
     );
     if (d == null) return;
-    final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    final t = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 9, minute: 0),
+    );
     if (t == null) return;
-    setState(() => _when = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+    setState(() {
+      _when = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+    });
   }
 
   Future<void> _submit() async {
-    if (!_form.currentState!.validate() || _when == null) {
+    final from = _from.text.trim();
+    final to = _to.text.trim();
+    final seats = int.tryParse(_seats.text.trim()) ?? 1;
+    final price = num.tryParse(_price.text.trim()) ?? 0;
+
+    if (from.isEmpty || to.isEmpty || _when == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields and pick date/time')),
+        const SnackBar(content: Text('From, To and Date/Time are required')),
       );
       return;
     }
+
+    setState(() => _busy = true);
     try {
       await widget.api.publish(
-        from: _from.text.trim(),
-        to: _to.text.trim(),
+        from: from,
+        to: to,
         when: _when!,
-        driverName: _driverName.text.trim(),
-        phone: _phone.text.trim(),
-        price: double.tryParse(_price.text.trim()) ?? 0,
-        seats: int.tryParse(_seats.text.trim()) ?? 1,
+        seats: seats,
+        price: price,
+        notes: _notes.text.trim(),
+        pool: _pool,
       );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ride published')),
-      );
-      _form.currentState!.reset();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ride published ✅')),
+        );
+      }
+      _from.clear();
+      _to.clear();
+      _notes.clear();
+      _price.text = '0';
+      _seats.text = '1';
       setState(() => _when = null);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Publish failed: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -79,30 +99,62 @@ class _PublishTabState extends State<PublishTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Publish Ride')),
-      body: Padding(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _form,
-          child: ListView(
+        children: [
+          TextField(
+            controller: _from,
+            decoration: const InputDecoration(labelText: 'From'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _to,
+            decoration: const InputDecoration(labelText: 'To'),
+          ),
+          const SizedBox(height: 8),
+          Row(
             children: [
-              TextFormField(controller: _from, decoration: const InputDecoration(labelText: 'From'), validator: (v)=>v!.isEmpty?'Required':null),
-              TextFormField(controller: _to, decoration: const InputDecoration(labelText: 'To'), validator: (v)=>v!.isEmpty?'Required':null),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(child: Text(_when == null ? 'Pick date & time' : _when.toString())),
-                  TextButton.icon(onPressed: _pickDateTime, icon: const Icon(Icons.event), label: const Text('Pick'))
-                ],
+              Expanded(
+                child: Text(_when == null
+                    ? 'No time selected'
+                    : _when!.toLocal().toString().substring(0, 16)),
               ),
-              TextFormField(controller: _driverName, decoration: const InputDecoration(labelText: 'Driver name'), validator: (v)=>v!.isEmpty?'Required':null),
-              TextFormField(controller: _phone, decoration: const InputDecoration(labelText: 'Phone'), validator: (v)=>v!.isEmpty?'Required':null),
-              TextFormField(controller: _price, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Price')),
-              TextFormField(controller: _seats, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Seats')),
-              const SizedBox(height: 16),
-              FilledButton(onPressed: _submit, child: const Text('Publish')),
+              TextButton(onPressed: _pickDateTime, child: const Text('Pick time')),
             ],
           ),
-        ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<PoolType>(
+            value: _pool,
+            items: PoolType.values
+                .map((p) => DropdownMenuItem(value: p, child: Text(p.label)))
+                .toList(),
+            onChanged: (p) => setState(() => _pool = p ?? _pool),
+            decoration: const InputDecoration(labelText: 'Pool'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _seats,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Seats'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _price,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Price'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _notes,
+            decoration: const InputDecoration(labelText: 'Notes (optional)'),
+            maxLength: 200,
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _busy ? null : _submit,
+            child: _busy ? const CircularProgressIndicator() : const Text('Publish'),
+          ),
+        ],
       ),
     );
   }

@@ -1,63 +1,66 @@
 import 'package:flutter/material.dart';
 import 'core/api_client.dart';
 import 'features/search/search_tab.dart';
+import 'features/inbox/inbox_tab.dart';
 import 'features/publish/publish_tab.dart';
 import 'features/rides/your_rides_tab.dart';
-import 'features/inbox/inbox_tab.dart';
 import 'features/profile/profile_tab.dart';
 
-void main() => runApp(const MyApp());
+void main() {
+  runApp(const CabshareApp());
+}
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  static const String _baseUrl = 'http://192.168.1.35:5000'; // <- your new Wi-Fi IP
+class CabshareApp extends StatelessWidget {
+  const CabshareApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final api = ApiClient(baseUrl: _baseUrl);
-    const currentUser = 'demo@cabshare.app'; // TODO: replace with real auth later
-
     return MaterialApp(
       title: 'Cabshare',
-      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.green),
-      home: _HomeShell(api: api, currentUser: currentUser),
+      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.teal),
+      home: const HomeShell(),
     );
   }
 }
 
-class _HomeShell extends StatefulWidget {
-  final ApiClient api;
-  final String currentUser;
-  const _HomeShell({required this.api, required this.currentUser});
+class HomeShell extends StatefulWidget {
+  const HomeShell({super.key});
 
   @override
-  State<_HomeShell> createState() => _HomeShellState();
+  State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<_HomeShell> {
-  int _index = 0;
+class _HomeShellState extends State<HomeShell> {
+  late final ApiClient api;
+  final String currentUser = 'rider'; // replace with real identity later
+  int _idx = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    api = ApiClient(baseUrl: 'http://192.168.1.35:5000'); // LAN server
+  }
 
   @override
   Widget build(BuildContext context) {
-    final pages = <Widget>[
-      SearchTab(api: widget.api),
-      PublishTab(api: widget.api),
-      YourRidesTab(api: widget.api, currentUser: widget.currentUser),
-      InboxTab(api: widget.api, currentUser: widget.currentUser),
-      const ProfileTab(),
+    final pages = [
+      SearchTab(api: api),
+      InboxTab(api: api, currentUser: currentUser),
+      PublishTab(api: api),
+      YourRidesTab(api: api),
+      const ProfileTab(), // <— now visible
     ];
 
     return Scaffold(
-      body: pages[_index],
+      body: pages[_idx],
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        selectedIndex: _idx,
+        onDestinationSelected: (i) => setState(() => _idx = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
-          NavigationDestination(icon: Icon(Icons.add_road), label: 'Publish'),
-          NavigationDestination(icon: Icon(Icons.directions_car), label: 'Your Rides'),
-          NavigationDestination(icon: Icon(Icons.chat_bubble_outline), label: 'Inbox'),
+          NavigationDestination(icon: Icon(Icons.inbox), label: 'Inbox'),
+          NavigationDestination(icon: Icon(Icons.add_circle), label: 'Publish'),
+          NavigationDestination(icon: Icon(Icons.directions_car), label: 'Your rides'),
           NavigationDestination(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),

@@ -1,23 +1,38 @@
-enum PoolType {
-  privatePool,        // white plate
-  commercialPool,     // yellow plate (shared)
-  commercialPrivate,  // full-car with home pickup
-}
+// lib/models/pool_type.dart
+enum PoolType { private, commercial, fullcar }
 
-extension PoolTypeX on PoolType {
+extension PoolTypeApi on PoolType {
   String get apiValue {
     switch (this) {
-      case PoolType.privatePool: return 'private';
-      case PoolType.commercialPool: return 'commercial';
-      case PoolType.commercialPrivate: return 'commercial_private';
+      case PoolType.private:
+        return 'private';
+      case PoolType.commercial:
+        return 'commercial';
+      case PoolType.fullcar:
+        return 'fullcar';
     }
   }
 
   String get label {
     switch (this) {
-      case PoolType.privatePool: return 'Private pool';
-      case PoolType.commercialPool: return 'Commercial pool';
-      case PoolType.commercialPrivate: return 'Commercial private';
+      case PoolType.private:
+        return 'Private pool';
+      case PoolType.commercial:
+        return 'Commercial pool';
+      case PoolType.fullcar:
+        return 'Full car';
+    }
+  }
+
+  static PoolType fromApi(String? v) {
+    switch (v) {
+      case 'commercial':
+        return PoolType.commercial;
+      case 'fullcar':
+        return PoolType.fullcar;
+      case 'private':
+      default:
+        return PoolType.private;
     }
   }
 }
