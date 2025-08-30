@@ -1,154 +1,108 @@
-// lib/features/publish/publish_tab.dart
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
-import '../../core/config_service.dart';
+import '../../models/ride.dart';
 
 class PublishTab extends StatefulWidget {
-  const PublishTab({super.key});
+  final ApiClient api;
+  const PublishTab({super.key, required this.api});
+
   @override
   State<PublishTab> createState() => _PublishTabState();
 }
 
 class _PublishTabState extends State<PublishTab> {
-  final _api = ApiClient(ConfigService.instance);
-
+  final _form = GlobalKey<FormState>();
   final _from = TextEditingController();
   final _to = TextEditingController();
-  final _driver = TextEditingController();
+  final _driverName = TextEditingController();
   final _phone = TextEditingController();
-  final _car = TextEditingController();
-  final _seats = TextEditingController(text: '3');
-  final _price = TextEditingController(text: '200');
+  final _price = TextEditingController();
+  final _seats = TextEditingController(text: '1');
+  DateTime? _when;
 
-  DateTime? _date;
-  TimeOfDay? _time;
-  bool _loading = false;
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: DateTime(now.year + 2),
-      initialDate: _date ?? now,
-    );
-    if (d != null) setState(() => _date = d);
+  @override
+  void dispose() {
+    _from.dispose();
+    _to.dispose();
+    _driverName.dispose();
+    _phone.dispose();
+    _price.dispose();
+    _seats.dispose();
+    super.dispose();
   }
 
-  Future<void> _pickTime() async {
-    final t = await showTimePicker(
+  Future<void> _pickDateTime() async {
+    final d = await showDatePicker(
       context: context,
-      initialTime: _time ?? TimeOfDay.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: DateTime.now(),
     );
-    if (t != null) setState(() => _time = t);
+    if (d == null) return;
+    final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    if (t == null) return;
+    setState(() => _when = DateTime(d.year, d.month, d.day, t.hour, t.minute));
   }
 
   Future<void> _submit() async {
-    if (_from.text.trim().isEmpty ||
-        _to.text.trim().isEmpty ||
-        _driver.text.trim().isEmpty ||
-        _date == null ||
-        _time == null) {
+    if (!_form.currentState!.validate() || _when == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill From, To, Driver, Date & Time')),
+        const SnackBar(content: Text('Please fill all fields and pick date/time')),
       );
       return;
     }
-    final when = DateTime(
-      _date!.year,
-      _date!.month,
-      _date!.day,
-      _time!.hour,
-      _time!.minute,
-    );
-
-    setState(() => _loading = true);
     try {
-      await _api.publish(
-        from: _from.text,
-        to: _to.text,
-        when: when, // matches ApiClient.publish signature
-        seats: int.tryParse(_seats.text.trim()) ?? 0,
-        price: int.tryParse(_price.text.trim()) ?? 0,
-        driverName: _driver.text,
-        phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
-        car: _car.text.trim().isEmpty ? null : _car.text.trim(),
+      await widget.api.publish(
+        from: _from.text.trim(),
+        to: _to.text.trim(),
+        when: _when!,
+        driverName: _driverName.text.trim(),
+        phone: _phone.text.trim(),
+        price: double.tryParse(_price.text.trim()) ?? 0,
+        seats: int.tryParse(_seats.text.trim()) ?? 1,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ride published ✅')),
+        const SnackBar(content: Text('Ride published')),
       );
-      // Clear inputs
-      _from.clear();
-      _to.clear();
-      _driver.clear();
-      _phone.clear();
-      _car.clear();
-      _seats.text = '3';
-      _price.text = '200';
-      setState(() {
-        _date = null;
-        _time = null;
-      });
+      _form.currentState!.reset();
+      setState(() => _when = null);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Publish failed: $e')),
       );
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: ListView(
+    return Scaffold(
+      appBar: AppBar(title: const Text('Publish Ride')),
+      body: Padding(
         padding: const EdgeInsets.all(16),
-        children: [
-          TextField(controller: _from, decoration: const InputDecoration(labelText: 'From')),
-          const SizedBox(height: 8),
-          TextField(controller: _to, decoration: const InputDecoration(labelText: 'To')),
-          const SizedBox(height: 8),
-          Row(
+        child: Form(
+          key: _form,
+          child: ListView(
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _pickDate,
-                  child: Text(_date == null ? 'Pick date' : '${_date!.year}-${_date!.month}-${_date!.day}'),
-                ),
+              TextFormField(controller: _from, decoration: const InputDecoration(labelText: 'From'), validator: (v)=>v!.isEmpty?'Required':null),
+              TextFormField(controller: _to, decoration: const InputDecoration(labelText: 'To'), validator: (v)=>v!.isEmpty?'Required':null),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: Text(_when == null ? 'Pick date & time' : _when.toString())),
+                  TextButton.icon(onPressed: _pickDateTime, icon: const Icon(Icons.event), label: const Text('Pick'))
+                ],
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _pickTime,
-                  child: Text(_time == null ? 'Pick time' : _time!.format(context)),
-                ),
-              ),
+              TextFormField(controller: _driverName, decoration: const InputDecoration(labelText: 'Driver name'), validator: (v)=>v!.isEmpty?'Required':null),
+              TextFormField(controller: _phone, decoration: const InputDecoration(labelText: 'Phone'), validator: (v)=>v!.isEmpty?'Required':null),
+              TextFormField(controller: _price, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Price')),
+              TextFormField(controller: _seats, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Seats')),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: _submit, child: const Text('Publish')),
             ],
           ),
-          const SizedBox(height: 8),
-          TextField(controller: _driver, decoration: const InputDecoration(labelText: 'Driver name')),
-          const SizedBox(height: 8),
-          TextField(controller: _phone, decoration: const InputDecoration(labelText: 'Phone (optional)')),
-          const SizedBox(height: 8),
-          TextField(controller: _car, decoration: const InputDecoration(labelText: 'Car (optional)')),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: TextField(controller: _seats, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Seats'))),
-              const SizedBox(width: 8),
-              Expanded(child: TextField(controller: _price, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Price (₹)'))),
-            ],
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _loading ? null : _submit,
-            child: _loading
-                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Publish ride'),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -1,14 +1,13 @@
-// lib/models/ride.dart
 class Ride {
   final String id;
   final String from;
   final String to;
   final DateTime when;
   final int seats;
-  final int price;
+  final double price;
   final String driverName;
-  final String? phone;
-  final String? car;
+  final String? driverPhone;
+  final bool? booked;
 
   Ride({
     required this.id,
@@ -18,45 +17,58 @@ class Ride {
     required this.seats,
     required this.price,
     required this.driverName,
-    this.phone,
-    this.car,
+    this.driverPhone,
+    this.booked,
   });
 
   factory Ride.fromJson(Map<String, dynamic> json) {
-    // Support id or _id
-    final id = (json['id'] ?? json['_id'] ?? '').toString();
-
-    // Prefer 'when' (ISO), else combine 'date' + optional 'time'
+    // Parse time: accept either 'when' (ISO) OR 'date' + 'time'
     DateTime? when;
-    final whenStr = json['when']?.toString();
-    if (whenStr != null && whenStr.isNotEmpty) {
-      when = DateTime.tryParse(whenStr);
+
+    final w = json['when'];
+    if (w is String && w.isNotEmpty) {
+      when = DateTime.tryParse(w);
     }
-    if (when == null && json['date'] != null) {
-      final dateStr = json['date'].toString(); // yyyy-MM-dd expected
-      final timeStr = (json['time'] ?? '00:00').toString(); // HH:mm
-      when = DateTime.tryParse('${dateStr}T$timeStr:00');
-      when ??= DateTime.tryParse('${dateStr}T00:00:00'); // fallback if only date
+
+    if (when == null) {
+      final dateStr = (json['date'] ?? '').toString();
+      final timeStr = (json['time'] ?? '').toString();
+      if (dateStr.isNotEmpty) {
+        if (timeStr.isNotEmpty) {
+          // Correct ISO with a literal 'T' between date and time
+          when = DateTime.tryParse('${dateStr}T$timeStr:00');
+        }
+        // Fallback to midnight if time missing/unparseable
+        when ??= DateTime.tryParse('${dateStr}T00:00:00');
+      }
     }
+
     when ??= DateTime.now();
 
-    return Ride(
-      id: id,
-      from: json['from']?.toString() ?? '',
-      to: json['to']?.toString() ?? '',
-      when: when,
-      seats: _toInt(json['seats'], 0),
-      price: _toInt(json['price'], 0),
-      driverName: json['driverName']?.toString() ?? '',
-      phone: json['phone']?.toString(),
-      car: json['car']?.toString(),
-    );
-  }
+    // seats can come as 'seats' or sometimes 'availableSeats'
+    int seatsVal = 0;
+    final seatsRaw = json['seats'];
+    if (seatsRaw is int) {
+      seatsVal = seatsRaw;
+    } else {
+      seatsVal = int.tryParse(seatsRaw?.toString() ?? '') ??
+          int.tryParse(json['availableSeats']?.toString() ?? '') ??
+          0;
+    }
 
-  static int _toInt(Object? v, int fallback) {
-    if (v == null) return fallback;
-    if (v is int) return v;
-    return int.tryParse(v.toString()) ?? fallback;
+    final priceVal = double.tryParse(json['price']?.toString() ?? '') ?? 0.0;
+
+    return Ride(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      from: (json['from'] ?? '').toString(),
+      to: (json['to'] ?? '').toString(),
+      when: when,
+      seats: seatsVal,
+      price: priceVal,
+      driverName: (json['driverName'] ?? json['driver'] ?? '').toString(),
+      driverPhone: json['driverPhone']?.toString(),
+      booked: json['booked'] is bool ? json['booked'] as bool : null,
+    );
   }
 
   Map<String, dynamic> toJson() => {
@@ -67,7 +79,7 @@ class Ride {
     'seats': seats,
     'price': price,
     'driverName': driverName,
-    if (phone != null) 'phone': phone,
-    if (car != null) 'car': car,
+    if (driverPhone != null) 'driverPhone': driverPhone,
+    if (booked != null) 'booked': booked,
   };
 }
