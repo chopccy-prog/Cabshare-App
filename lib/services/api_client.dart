@@ -84,24 +84,28 @@ class ApiClient {
   // ------------------------------------------------------------
   // Inbox
   // ------------------------------------------------------------
+// --- Inbox (replace all three methods with these) ---
+
   Future<List<dynamic>> inbox() async {
     final resp = await _send('GET', '/inbox');
     final j = json.decode(resp.body) as Map<String, dynamic>;
     return _itemsOf(j);
   }
 
-  Future<List<dynamic>> messages(String conversationId) async {
-    final resp = await _send('GET', '/inbox/$conversationId/messages');
+  Future<List<dynamic>> messages(String rideId, String otherUserId) async {
+    final uri = Uri(path: '/inbox/$rideId/messages', queryParameters: {'with': otherUserId}).toString();
+    final resp = await _send('GET', uri);
     final j = json.decode(resp.body) as Map<String, dynamic>;
     return _itemsOf(j);
   }
 
-  Future<Map<String, dynamic>?> sendMessage(String conversationId, String text) async {
-    final resp = await _send('POST', '/inbox/$conversationId/messages', body: {'text': text});
+  Future<Map<String, dynamic>?> sendMessage(String rideId, String toUserId, String text) async {
+    final resp = await _send('POST', '/inbox/$rideId/messages', body: {'to': toUserId, 'text': text});
     final j = json.decode(resp.body) as Map<String, dynamic>;
     final v = j['message'];
     return (v is Map<String, dynamic>) ? v : null;
   }
+
 
   // ------------------------------------------------------------
   // Admin (requires backend service-role key configured)

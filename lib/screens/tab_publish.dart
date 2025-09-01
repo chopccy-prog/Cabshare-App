@@ -1,11 +1,9 @@
-// lib/screens/tab_publish.dart
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
 class TabPublish extends StatefulWidget {
   final ApiClient api;
   const TabPublish({super.key, required this.api});
-
   @override
   State<TabPublish> createState() => _TabPublishState();
 }
@@ -19,34 +17,27 @@ class _TabPublishState extends State<TabPublish> {
   DateTime? _pickedDate;
   TimeOfDay? _pickedTime;
 
-  String _pool = 'private'; // keep existing types
-  bool _isCommercial = false;
+  String _pool = 'private';        // private | shared (existing types only)
+  bool _isCommercial = false;      // commercial flag
 
   bool _busy = false;
   String? _msg;
 
   String _fmtDate(DateTime d) =>
-      "${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
-
+      "${d.year.toString().padLeft(4,'0')}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}";
   String _fmtTime(TimeOfDay t) =>
-      "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
+      "${t.hour.toString().padLeft(2,'0')}:${t.minute.toString().padLeft(2,'0')}";
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final d = await showDatePicker(
-      context: context,
-      initialDate: _pickedDate ?? now,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
-    );
+        context: context, initialDate: _pickedDate ?? now,
+        firstDate: now, lastDate: now.add(const Duration(days: 365)));
     if (d != null) setState(() => _pickedDate = d);
   }
 
   Future<void> _pickTime() async {
-    final t = await showTimePicker(
-      context: context,
-      initialTime: _pickedTime ?? TimeOfDay.now(),
-    );
+    final t = await showTimePicker(context: context, initialTime: _pickedTime ?? TimeOfDay.now());
     if (t != null) setState(() => _pickedTime = t);
   }
 
@@ -63,8 +54,8 @@ class _TabPublishState extends State<TabPublish> {
         'whenTime': _fmtTime(_pickedTime!),
         'seats': int.tryParse(_seats.text) ?? 1,
         'price': int.tryParse(_price.text) ?? 0,
-        'pool': _pool,                 // uses existing types
-        'isCommercial': _isCommercial, // backend will store if column exists; otherwise ignored
+        'pool': _pool,                 // existing types
+        'isCommercial': _isCommercial, // commercial private = private + true
       });
       setState(() { _msg = ride == null ? 'Failed to publish' : 'Published ride ${ride['id'] ?? ''}'; });
     } catch (e) {
@@ -114,18 +105,17 @@ class _TabPublishState extends State<TabPublish> {
             const SizedBox(width: 8),
             Expanded(child: TextField(controller: _price, decoration: const InputDecoration(labelText: 'Price (₹)'), keyboardType: TextInputType.number)),
           ]),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Row(children: [
-            const Text('Ride type: '),
+            const Text('Ride type:'),
             const SizedBox(width: 8),
-            DropdownButton<String>(
-              value: _pool,
-              onChanged: (v) => setState(() => _pool = v ?? 'private'),
-              items: const [
-                DropdownMenuItem(value: 'private', child: Text('Private pool')),
-                DropdownMenuItem(value: 'shared',  child: Text('Commercial pool (shared)')),
-                DropdownMenuItem(value: 'private', child: Text('Commercial private')), // shown via Commercial toggle below
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'private', label: Text('Private')),
+                ButtonSegment(value: 'shared',  label: Text('Shared')),
               ],
+              selected: {_pool},
+              onSelectionChanged: (s) => setState(() => _pool = s.first),
             ),
             const Spacer(),
             const Text('Commercial'),
