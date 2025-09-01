@@ -5,125 +5,95 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../env.dart';
 
 class ApiClient {
-  ApiClient();
+  final _base = Env.apiBase;
 
-  final String _base = Env.apiBase;
-
-  // Safe extractor for "items" list from JSON responses
-  List<dynamic> _itemsOf(Map<String, dynamic> j) {
-    final v = j['items'];
-    return (v is List) ? v : <dynamic>[];
-  }
-
-  Future<http.Response> _send(
-      String method,
-      String path, {
-        Map<String, String>? headers,
-        Object? body,
-      }) async {
+  Future<http.Response> _send(String method, String path,
+      {Map<String, String>? headers, Object? body}) async {
     final session = Supabase.instance.client.auth.currentSession;
     final token = session?.accessToken;
-
     final uri = Uri.parse('$_base$path');
     final req = http.Request(method, uri);
     req.headers['Content-Type'] = 'application/json';
-    if (token != null && token.isNotEmpty) {
-      req.headers['Authorization'] = 'Bearer $token';
-    }
+    if (token != null) req.headers['Authorization'] = 'Bearer $token';
     if (headers != null) req.headers.addAll(headers);
     if (body != null) req.body = json.encode(body);
-
-    final streamed = await req.send();
-    final resp = await http.Response.fromStream(streamed);
-
+    final resp = await http.Response.fromStream(await req.send());
     if (resp.statusCode >= 400) {
-      // Surface backend errors in a useful way
       throw Exception('API ${resp.statusCode}: ${resp.body}');
     }
     return resp;
   }
 
-  // ------------------------------------------------------------
-  // Rides
-  // ------------------------------------------------------------
-  Future<List<dynamic>> searchRides({
-    String? from,
-    String? to,
-    String? when,
-  }) async {
-    final qs = <String, String>{
-      if (from != null && from.isNotEmpty) 'from': from,
-      if (to != null && to.isNotEmpty) 'to': to,
-      if (when != null && when.isNotEmpty) 'when': when,
+  Future<List<dynamic>> searchRides({String? from, String? to, String? when}) async {
+    final qs = {
+      if (from != null) 'from': from,
+      if (to != null) 'to': to,
+      if (when != null) 'when': when,
     };
-    final resp = await _send('GET', Uri(path: '/rides/search', queryParameters: qs).toString());
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
+    final uri = Uri(path: '/rides/search', queryParameters: qs).toString();
+    final resp = await _send('GET', uri);
+    final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
+    return (jsonBody['items'] as List<dynamic>? ?? []);
   }
 
   Future<Map<String, dynamic>?> publishRide(Map<String, dynamic> payload) async {
     final resp = await _send('POST', '/rides/publish', body: payload);
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['ride'];
-    return (v is Map<String, dynamic>) ? v : null;
+    final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
+    return (jsonBody['ride'] as Map<String, dynamic>?);
   }
 
   Future<Map<String, dynamic>?> bookRide(String rideId, int seats) async {
     final resp = await _send('POST', '/bookings/$rideId', body: {'seats': seats});
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['booking'];
-    return (v is Map<String, dynamic>) ? v : null;
+    final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
+    return (jsonBody['booking'] as Map<String, dynamic>?);
   }
 
   Future<List<dynamic>> myRides(String role) async {
     final resp = await _send('GET', '/rides/mine?role=$role');
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
+    final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
+    return (jsonBody['items'] as List<dynamic>? ?? []);
   }
 
-  // ------------------------------------------------------------
-  // Inbox
-  // ------------------------------------------------------------
   Future<List<dynamic>> inbox() async {
     final resp = await _send('GET', '/inbox');
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
+    return (j['items'] as List<dynamic>? ?? []);
   }
 
   Future<List<dynamic>> messages(String conversationId) async {
     final resp = await _send('GET', '/inbox/$conversationId/messages');
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
+    return (j['items'] as List<dynamic>? ?? []);
   }
 
   Future<Map<String, dynamic>?> sendMessage(String conversationId, String text) async {
     final resp = await _send('POST', '/inbox/$conversationId/messages', body: {'text': text});
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['message'];
-    return (v is Map<String, dynamic>) ? v : null;
+    return (j['message'] as Map<String, dynamic>?);
   }
 
-  // ------------------------------------------------------------
-  // Admin (requires backend service-role key configured)
-  // ------------------------------------------------------------
+  // ============================================================
+  //                       ADMIN API
+  // ============================================================
+
+  // Cities
   Future<List<dynamic>> adminListCities() async {
     final resp = await _send('GET', '/admin/cities');
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
+    return (j['items'] as List<dynamic>? ?? []);
   }
 
   Future<Map<String, dynamic>> adminUpsertCity(String name) async {
     final resp = await _send('POST', '/admin/cities', body: {'name': name});
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['city'];
-    if (v is Map<String, dynamic>) return v;
-    throw Exception('Malformed response: missing "city"');
+    return (j['city'] as Map<String, dynamic>);
   }
 
+  // Routes
   Future<List<dynamic>> adminListRoutes() async {
     final resp = await _send('GET', '/admin/routes');
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
+    return (j['items'] as List<dynamic>? ?? []);
   }
 
   Future<Map<String, dynamic>> adminCreateRoute({
@@ -139,15 +109,14 @@ class ApiClient {
       'distance_km': distanceKm,
     });
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['route'];
-    if (v is Map<String, dynamic>) return v;
-    throw Exception('Malformed response: missing "route"');
+    return (j['route'] as Map<String, dynamic>);
   }
 
+  // Stops
   Future<List<dynamic>> adminListStops() async {
     final resp = await _send('GET', '/admin/stops');
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
+    return (j['items'] as List<dynamic]? ?? []);
   }
 
   Future<Map<String, dynamic>> adminCreateStop({
@@ -163,11 +132,10 @@ class ApiClient {
       'city_id': cityId,
     });
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['stop'];
-    if (v is Map<String, dynamic>) return v;
-    throw Exception('Malformed response: missing "stop"');
+    return (j['stop'] as Map<String, dynamic>);
   }
 
+  // Route-Stop mapping
   Future<Map<String, dynamic>> adminAttachStopToRoute({
     required int routeId,
     required int stopId,
@@ -179,8 +147,6 @@ class ApiClient {
       'rank': rank,
     });
     final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['routeStop'];
-    if (v is Map<String, dynamic>) return v;
-    throw Exception('Malformed response: missing "routeStop"');
+    return (j['routeStop'] as Map<String, dynamic>);
   }
 }

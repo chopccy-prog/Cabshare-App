@@ -1,11 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow local development over HTTP -->
     <domain-config cleartextTrafficPermitted="true">
-        <!-- Phone on same Wi-Fi -->
-        <domain includeSubdomains="true">192.168.1.7</domain>
-        <!-- Android emulator host, if you use it later -->
-        <domain>10.0.2.2</domain>
-        <domain>localhost</domain>
+        <domain includeSubdomains="true">192.168.1.5</domain>
+        <domain>10.0.2.2</domain> <!-- if you ever use emulator -->
     </domain-config>
 </network-security-config>

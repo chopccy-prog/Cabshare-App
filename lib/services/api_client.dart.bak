@@ -1,0 +1,74 @@
+// lib/services/api_client.dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../env.dart';
+
+class ApiClient {
+  final _base = Env.apiBase;
+
+  Future<http.Response> _send(String method, String path,
+      {Map<String, String>? headers, Object? body}) async {
+    final session = Supabase.instance.client.auth.currentSession;
+    final token = session?.accessToken;
+    final uri = Uri.parse('$_base$path');
+    final req = http.Request(method, uri);
+    req.headers['Content-Type'] = 'application/json';
+    if (token != null) req.headers['Authorization'] = 'Bearer $token';
+    if (headers != null) req.headers.addAll(headers);
+    if (body != null) req.body = json.encode(body);
+    final resp = await http.Response.fromStream(await req.send());
+    if (resp.statusCode >= 400) {
+      throw Exception('API ${resp.statusCode}: ${resp.body}');
+    }
+    return resp;
+  }
+
+  Future<List<dynamic>> searchRides({String? from, String? to, String? when}) async {
+    final qs = {
+      if (from != null) 'from': from,
+      if (to != null) 'to': to,
+      if (when != null) 'when': when,
+    };
+    final uri = Uri(path: '/rides/search', queryParameters: qs).toString();
+    final resp = await _send('GET', uri);
+    final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
+    return (jsonBody['items'] as List<dynamic>? ?? []);
+  }
+
+  Future<Map<String, dynamic>?> publishRide(Map<String, dynamic> payload) async {
+    final resp = await _send('POST', '/rides/publish', body: payload);
+    final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
+    return (jsonBody['ride'] as Map<String, dynamic>?);
+  }
+
+  Future<Map<String, dynamic>?> bookRide(String rideId, int seats) async {
+    final resp = await _send('POST', '/bookings/$rideId', body: {'seats': seats});
+    final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
+    return (jsonBody['booking'] as Map<String, dynamic>?);
+  }
+
+  Future<List<dynamic>> myRides(String role) async {
+    final resp = await _send('GET', '/rides/mine?role=$role');
+    final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
+    return (jsonBody['items'] as List<dynamic>? ?? []);
+  }
+
+  Future<List<dynamic>> inbox() async {
+    final resp = await _send('GET', '/inbox');
+    final j = json.decode(resp.body) as Map<String, dynamic>;
+    return (j['items'] as List<dynamic>? ?? []);
+  }
+
+  Future<List<dynamic>> messages(String conversationId) async {
+    final resp = await _send('GET', '/inbox/$conversationId/messages');
+    final j = json.decode(resp.body) as Map<String, dynamic>;
+    return (j['items'] as List<dynamic>? ?? []);
+  }
+
+  Future<Map<String, dynamic>?> sendMessage(String conversationId, String text) async {
+    final resp = await _send('POST', '/inbox/$conversationId/messages', body: {'text': text});
+    final j = json.decode(resp.body) as Map<String, dynamic>;
+    return (j['message'] as Map<String, dynamic>?);
+  }
+}
