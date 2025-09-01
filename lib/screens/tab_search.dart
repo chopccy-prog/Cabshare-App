@@ -15,6 +15,8 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
   final _to = TextEditingController();
   final _when = TextEditingController();
 
+  DateTime? _pickedDate;
+
   bool _busy = false;
   String? _err;
   List<dynamic> _raw = []; // full server response (unfiltered)
@@ -25,8 +27,6 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
-    // optional: preload
-    _search();
   }
 
   @override
@@ -36,6 +36,23 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
     _to.dispose();
     _when.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _pickedDate ?? now,
+      firstDate: now.subtract(const Duration(days: 0)),
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (d != null) {
+      _pickedDate = d;
+      _when.text = "${d.year.toString().padLeft(4, '0')}"
+          "-${d.month.toString().padLeft(2, '0')}"
+          "-${d.day.toString().padLeft(2, '0')}";
+      setState(() {});
+    }
   }
 
   Future<void> _search() async {
@@ -54,7 +71,7 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
     }
   }
 
-  // ---- category filter helpers ----
+  // ---- category filter helpers (no DB change required) ----
   bool _isCommercial(Map<String, dynamic> m) {
     final v = m['is_commercial'];
     if (v is bool) return v;
@@ -66,24 +83,19 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
   String _pool(Map<String, dynamic> m) {
     final v = m['pool'];
     if (v is String && v.isNotEmpty) return v.toLowerCase();
-    // some rows may not have pool; default to 'private' so they appear somewhere
-    return 'private';
+    return 'private'; // default if not provided
   }
 
   // tabIndex: 0=Private pool, 1=Commercial pool, 2=Commercial private
   bool _matchCategory(Map<String, dynamic> m, int tabIndex) {
-    final pool = _pool(m); // 'private' or 'shared' or maybe others in your data
+    final pool = _pool(m); // 'private' or 'shared'
     final commercial = _isCommercial(m);
 
     switch (tabIndex) {
-      case 0: // Private pool (non-commercial private seats)
-        return (pool == 'private') && !commercial;
-      case 1: // Commercial pool (commercial + shared/pool)
-        return (pool == 'shared') && commercial;
-      case 2: // Commercial private (commercial + private)
-        return (pool == 'private') && commercial;
-      default:
-        return true;
+      case 0: return (pool == 'private') && !commercial;      // Private pool (personal/private seats)
+      case 1: return (pool == 'shared')  && commercial;       // Commercial pool
+      case 2: return (pool == 'private') && commercial;       // Commercial private
+      default: return true;
     }
   }
 
@@ -97,7 +109,7 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
       length: 3,
       child: Column(
         children: [
-          // --- Search form ---
+          // --- Search form with pickers ---
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: Column(
@@ -109,7 +121,14 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
                 ]),
                 const SizedBox(height: 8),
                 Row(children: [
-                  Expanded(child: TextField(controller: _when, decoration: const InputDecoration(labelText: 'Date (YYYY-MM-DD, optional)'))),
+                  Expanded(
+                    child: TextField(
+                      controller: _when,
+                      readOnly: true,
+                      decoration: const InputDecoration(labelText: 'Date (tap to pick)', suffixIcon: Icon(Icons.calendar_today)),
+                      onTap: _pickDate,
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   FilledButton.icon(
                     onPressed: _busy ? null : _search,
@@ -127,9 +146,8 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
           ),
           const Divider(height: 1),
           // --- Tabs ---
-          TabBar(
-            controller: _tab,
-            tabs: const [
+          const TabBar(
+            tabs: [
               Tab(text: 'Private pool'),
               Tab(text: 'Commercial pool'),
               Tab(text: 'Commercial private'),
@@ -141,7 +159,6 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
             child: _busy
                 ? const Center(child: CircularProgressIndicator())
                 : TabBarView(
-              controller: _tab,
               children: [
                 _ResultsList(items: _filtered(0)),
                 _ResultsList(items: _filtered(1)),
@@ -175,11 +192,11 @@ class _ResultsList extends StatelessWidget {
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (_, i) {
         final m = items[i];
-        final from = _safeStr(m, 'from') .isNotEmpty ? _safeStr(m, 'from')  : _safeStr(m, 'from_city');
-        final to   = _safeStr(m, 'to')   .isNotEmpty ? _safeStr(m, 'to')    : _safeStr(m, 'to_city');
-        final when = _safeStr(m, 'when') .isNotEmpty ? _safeStr(m, 'when')  : _safeStr(m, 'start_time');
+        final from = _safeStr(m, 'from').isNotEmpty ? _safeStr(m, 'from') : _safeStr(m, 'from_city');
+        final to   = _safeStr(m, 'to').isNotEmpty   ? _safeStr(m, 'to')   : _safeStr(m, 'to_city');
+        final when = _safeStr(m, 'when').isNotEmpty ? _safeStr(m, 'when') : _safeStr(m, 'start_time');
         final price = _safeStr(m, 'price_inr').isNotEmpty ? _safeStr(m, 'price_inr') : _safeStr(m, 'price');
-        final seats = _safeStr(m, 'seats') .isNotEmpty ? _safeStr(m, 'seats') : _safeStr(m, 'available_seats');
+        final seats = _safeStr(m, 'seats').isNotEmpty ? _safeStr(m, 'seats') : _safeStr(m, 'available_seats');
         final pool  = _safeStr(m, 'pool');
         final commercial = (m['is_commercial'] == true || m['is_commercial'] == 1 || m['is_commercial'] == 'true');
 

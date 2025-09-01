@@ -11,60 +11,81 @@ class TabMyRides extends StatefulWidget {
 }
 
 class _TabMyRidesState extends State<TabMyRides> {
-  String _role = 'driver';
-  List<dynamic> _items = [];
+  int _which = 0; // 0=Published (driver), 1=Booked (rider)
   bool _busy = false;
+  String? _err;
+  List<dynamic> _driver = [];
+  List<dynamic> _rider = [];
 
-  Future<void> _load() async {
-    setState(() { _busy = true; });
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    setState(() { _busy = true; _err = null; });
     try {
-      final items = await widget.api.myRides(_role);
-      setState(() { _items = items; });
+      final d = await widget.api.myRides('driver');
+      final r = await widget.api.myRides('rider');
+      setState(() { _driver = d; _rider = r; });
+    } catch (e) {
+      setState(() { _err = e.toString(); });
     } finally {
       setState(() { _busy = false; });
     }
   }
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final items = _which == 0 ? _driver : _rider;
+
     return Column(
       children: [
-        Row(
-          children: [
-            const SizedBox(width: 12),
-            const Text('Role:'),
-            const SizedBox(width: 8),
-            DropdownButton<String>(
-              value: _role,
-              items: const [
-                DropdownMenuItem(value: 'driver', child: Text('Driver')),
-                DropdownMenuItem(value: 'rider', child: Text('Rider')),
-              ],
-              onChanged: (v) => setState(() { _role = v!; _load(); }),
-            ),
-            const Spacer(),
-            IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+        const SizedBox(height: 8),
+        SegmentedButton<int>(
+          segments: const [
+            ButtonSegment(value: 0, label: Text('Published')),
+            ButtonSegment(value: 1, label: Text('Booked')),
           ],
+          selected: {_which},
+          onSelectionChanged: (s) => setState(() => _which = s.first),
         ),
-        const Divider(),
+        const SizedBox(height: 8),
+        if (_err != null) Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(_err!, style: const TextStyle(color: Colors.red))),
         Expanded(
-          child: _busy ? const Center(child: CircularProgressIndicator()) :
-          ListView.builder(
-            itemCount: _items.length,
-            itemBuilder: (context, i) {
-              final it = _items[i] as Map<String, dynamic>;
-              return ListTile(
-                title: Text('${it['route']?['code'] ?? it['id']}'),
-                subtitle: Text('${it['created_at'] ?? ''}'),
-              );
-            },
+          child: RefreshIndicator(
+            onRefresh: _refresh,
+            child: _busy
+                ? const Center(child: CircularProgressIndicator())
+                : items.isEmpty
+                ? Center(child: Text(_which == 0 ? 'No rides you published yet.' : 'No rides you booked yet.'))
+                : ListView.separated(
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) {
+                final m = items[i] as Map<String, dynamic>;
+                final from = (m['from'] ?? m['from_city'] ?? '').toString();
+                final to   = (m['to']   ?? m['to_city']   ?? '').toString();
+                final when = (m['when'] ?? m['start_time'] ?? '').toString();
+                final seats = (m['seats'] ?? m['available_seats'] ?? '').toString();
+                final pool  = (m['pool'] ?? '').toString();
+                final commercial = (m['is_commercial'] == true || m['is_commercial'] == 1 || m['is_commercial'] == 'true');
+                final price = (m['price_inr'] ?? m['price'] ?? '').toString();
+
+                return ListTile(
+                  leading: Icon(_which == 0 ? Icons.drive_eta : Icons.event_seat),
+                  title: Text('$from → $to'),
+                  subtitle: Text('When: $when • Seats: $seats • ₹$price • ${commercial ? "Commercial" : "Personal"} • ${pool.isEmpty ? "private?" : pool}'),
+                );
+              },
+            ),
           ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: FilledButton.icon(onPressed: _refresh, icon: const Icon(Icons.refresh), label: const Text('Refresh')),
         ),
       ],
     );

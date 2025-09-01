@@ -7,7 +7,6 @@ import 'tab_publish.dart';
 import 'tab_my_rides.dart';
 import 'tab_inbox.dart';
 import 'tab_profile.dart';
-import 'tab_admin.dart'; // NEW
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -30,7 +29,6 @@ class _HomeShellState extends State<HomeShell> {
           TabPublish(api: _api),
           TabMyRides(api: _api),
           TabInbox(api: _api),
-          TabAdmin(api: _api),      // NEW
           const TabProfile(),
         ],
       ),
@@ -42,7 +40,6 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(icon: Icon(Icons.add_circle), label: 'Publish'),
           NavigationDestination(icon: Icon(Icons.directions_car), label: 'Your Rides'),
           NavigationDestination(icon: Icon(Icons.inbox), label: 'Inbox'),
-          NavigationDestination(icon: Icon(Icons.admin_panel_settings), label: 'Admin'), // NEW
           NavigationDestination(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
