@@ -1,34 +1,23 @@
 // lib/models/pool_type.dart
 enum PoolType { private, commercial, fullcar }
 
-extension PoolTypeApi on PoolType {
-  String get apiValue {
+extension PoolTypeName on PoolType {
+  String get name {
     switch (this) {
       case PoolType.private:
         return 'private';
       case PoolType.commercial:
         return 'commercial';
       case PoolType.fullcar:
-        return 'fullcar';
+        return 'commercial_private'; // server expects this name
     }
   }
 
-  String get label {
-    switch (this) {
-      case PoolType.private:
-        return 'Private pool';
-      case PoolType.commercial:
-        return 'Commercial pool';
-      case PoolType.fullcar:
-        return 'Full car';
-    }
-  }
-
-  static PoolType fromApi(String? v) {
-    switch (v) {
+  static PoolType fromServer(String? s) {
+    switch (s) {
       case 'commercial':
         return PoolType.commercial;
-      case 'fullcar':
+      case 'commercial_private':
         return PoolType.fullcar;
       case 'private':
       default:

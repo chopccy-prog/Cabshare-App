@@ -14,82 +14,82 @@ class PublishTab extends StatefulWidget {
 class _PublishTabState extends State<PublishTab> {
   final _from = TextEditingController();
   final _to = TextEditingController();
-  final _notes = TextEditingController();
-  final _price = TextEditingController(text: '0');
   final _seats = TextEditingController(text: '1');
+  final _price = TextEditingController(text: '100');
 
-  DateTime? _when;
+  DateTime? _date;
+  TimeOfDay? _time;
   PoolType _pool = PoolType.private;
   bool _busy = false;
 
-  @override
-  void dispose() {
-    _from.dispose();
-    _to.dispose();
-    _notes.dispose();
-    _price.dispose();
-    _seats.dispose();
-    super.dispose();
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date ?? now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (picked != null) setState(() => _date = picked);
   }
 
-  Future<void> _pickDateTime() async {
-    final d = await showDatePicker(
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
       context: context,
-      initialDate: DateTime.now().add(const Duration(days: 1)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialTime: _time ?? const TimeOfDay(hour: 9, minute: 30),
     );
-    if (d == null) return;
-    final t = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 9, minute: 0),
-    );
-    if (t == null) return;
-    setState(() {
-      _when = DateTime(d.year, d.month, d.day, t.hour, t.minute);
-    });
+    if (picked != null) setState(() => _time = picked);
   }
 
   Future<void> _submit() async {
     final from = _from.text.trim();
     final to = _to.text.trim();
-    final seats = int.tryParse(_seats.text.trim()) ?? 1;
-    final price = num.tryParse(_price.text.trim()) ?? 0;
+    final seats = int.tryParse(_seats.text.trim());
+    final price = num.tryParse(_price.text.trim());
 
-    if (from.isEmpty || to.isEmpty || _when == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('From, To and Date/Time are required')),
-      );
+    if (from.isEmpty || to.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('From/To required')));
       return;
     }
+    if (_date == null || _time == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select date & time')));
+      return;
+    }
+    if (seats == null || seats <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seats must be > 0')));
+      return;
+    }
+    if (price == null || price < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Price must be >= 0')));
+      return;
+    }
+
+    final when = DateTime(_date!.year, _date!.month, _date!.day, _time!.hour, _time!.minute);
 
     setState(() => _busy = true);
     try {
       await widget.api.publish(
         from: from,
         to: to,
-        when: _when!,
+        when: when,
         seats: seats,
         price: price,
-        notes: _notes.text.trim(),
         pool: _pool,
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ride published ✅')),
-        );
-      }
-      _from.clear();
-      _to.clear();
-      _notes.clear();
-      _price.text = '0';
-      _seats.text = '1';
-      setState(() => _when = null);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ride published!')));
+      setState(() {
+        _from.clear();
+        _to.clear();
+        _seats.text = '1';
+        _price.text = '100';
+        _date = null;
+        _time = null;
+        _pool = PoolType.private;
+      });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Publish failed: $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Publish failed: $e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -99,62 +99,83 @@ class _PublishTabState extends State<PublishTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Publish Ride')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          TextField(
-            controller: _from,
-            decoration: const InputDecoration(labelText: 'From'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _to,
-            decoration: const InputDecoration(labelText: 'To'),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(_when == null
-                    ? 'No time selected'
-                    : _when!.toLocal().toString().substring(0, 16)),
-              ),
-              TextButton(onPressed: _pickDateTime, child: const Text('Pick time')),
-            ],
-          ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<PoolType>(
-            value: _pool,
-            items: PoolType.values
-                .map((p) => DropdownMenuItem(value: p, child: Text(p.label)))
-                .toList(),
-            onChanged: (p) => setState(() => _pool = p ?? _pool),
-            decoration: const InputDecoration(labelText: 'Pool'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _seats,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Seats'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _price,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Price'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _notes,
-            decoration: const InputDecoration(labelText: 'Notes (optional)'),
-            maxLength: 200,
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _busy ? null : _submit,
-            child: _busy ? const CircularProgressIndicator() : const Text('Publish'),
-          ),
-        ],
+      body: AbsorbPointer(
+        absorbing: _busy,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            TextField(
+              controller: _from,
+              decoration: const InputDecoration(labelText: 'From'),
+              textCapitalization: TextCapitalization.words,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _to,
+              decoration: const InputDecoration(labelText: 'To'),
+              textCapitalization: TextCapitalization.words,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _pickDate,
+                    child: Text(_date == null
+                        ? 'Select date'
+                        : '${_date!.year}-${_date!.month.toString().padLeft(2, '0')}-${_date!.day.toString().padLeft(2, '0')}'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _pickTime,
+                    child: Text(_time == null
+                        ? 'Select time'
+                        : '${_time!.hour.toString().padLeft(2, '0')}:${_time!.minute.toString().padLeft(2, '0')}'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _seats,
+                    decoration: const InputDecoration(labelText: 'Seats'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _price,
+                    decoration: const InputDecoration(labelText: 'Price (INR)'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<PoolType>(
+              value: _pool,
+              decoration: const InputDecoration(labelText: 'Pool'),
+              onChanged: (v) => setState(() => _pool = v ?? PoolType.private),
+              items: const [
+                DropdownMenuItem(value: PoolType.private, child: Text('Private pool')),
+                DropdownMenuItem(value: PoolType.commercial, child: Text('Commercial pool')),
+                DropdownMenuItem(value: PoolType.fullcar, child: Text('Commercial private')),
+              ],
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _busy ? null : _submit,
+              icon: const Icon(Icons.check),
+              label: Text(_busy ? 'Publishing…' : 'Publish'),
+            ),
+          ],
+        ),
       ),
     );
   }

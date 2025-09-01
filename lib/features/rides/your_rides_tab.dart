@@ -1,5 +1,5 @@
+// lib/features/rides/your_rides_tab.dart
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../core/api_client.dart';
 import '../../models/ride.dart';
 
@@ -12,8 +12,22 @@ class YourRidesTab extends StatefulWidget {
 }
 
 class _YourRidesTabState extends State<YourRidesTab> {
-  bool _loading = false;
+  bool _busy = false;
   List<Ride> _rides = [];
+
+  Future<void> _load() async {
+    setState(() => _busy = true);
+    try {
+      final list = await widget.api.myRides(driverName: '');
+      if (!mounted) return;
+      setState(() => _rides = list);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Load failed: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   void initState() {
@@ -21,107 +35,45 @@ class _YourRidesTabState extends State<YourRidesTab> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final list = await widget.api.myRides();
-      list.sort((a, b) => b.when.compareTo(a.when)); // latest first
-      setState(() => _rides = list);
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final df = DateFormat('EEE, dd MMM • HH:mm');
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Your rides'),
+        title: const Text('Your Rides'),
         actions: [
-          IconButton(
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-          )
+          IconButton(onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _loading
-          ? const LinearProgressIndicator()
+      body: _busy
+          ? const Center(child: CircularProgressIndicator())
           : _rides.isEmpty
           ? const Center(child: Text('No rides yet'))
           : ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemBuilder: (ctx, i) {
+        itemCount: _rides.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (_, i) {
           final r = _rides[i];
-          final isBooked = r.booked == true || r.seats == 0;
-          final bg = isBooked
-              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.35)
-              : Theme.of(context).colorScheme.surface;
-          final chipColor = isBooked
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.secondary;
-          final chipLabel = isBooked ? 'Booked' : 'Published';
+          final d = r.when;
+          final date = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+          final time = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+          final tag = r.booked ? 'BOOKED' : 'PUBLISHED';
+          final tagColor = r.booked ? Colors.green : Colors.blueGrey;
 
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isBooked
-                    ? Theme.of(context).colorScheme.primary.withOpacity(0.5)
-                    : Theme.of(context).dividerColor.withOpacity(0.4),
+          return ListTile(
+            title: Text('${r.from} → ${r.to}'),
+            subtitle: Text('$date  $time  • ₹${r.price}  • seats: ${r.seats}  • ${r.pool}'),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: tagColor.withOpacity(0.15),
+                border: Border.all(color: tagColor),
+                borderRadius: BorderRadius.circular(8),
               ),
-            ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              title: Row(
-                children: [
-                  Expanded(child: Text('${r.from} → ${r.to}', style: const TextStyle(fontWeight: FontWeight.w600))),
-                  const SizedBox(width: 8),
-                  Chip(
-                    label: Text(chipLabel),
-                    backgroundColor: chipColor.withOpacity(0.12),
-                    side: BorderSide(color: chipColor.withOpacity(0.5)),
-                    labelStyle: TextStyle(
-                      color: chipColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ],
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 6,
-                  children: [
-                    _kv(context, Icons.event, df.format(r.when.toLocal())),
-                    _kv(context, Icons.event_seat, 'Seats ${r.seats}'),
-                    _kv(context, Icons.currency_rupee, '${r.price}'),
-                    _kv(context, Icons.local_taxi, r.pool),
-                  ],
-                ),
-              ),
+              child: Text(tag, style: TextStyle(color: tagColor, fontWeight: FontWeight.w600)),
             ),
           );
         },
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
-        itemCount: _rides.length,
       ),
-    );
-  }
-
-  Widget _kv(BuildContext context, IconData icon, String text) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7)),
-        const SizedBox(width: 4),
-        Text(text),
-      ],
     );
   }
 }

@@ -6,13 +6,10 @@ class Ride {
   final DateTime when;
   final int seats;
   final num price;
-  final String pool;
-
-  // Optional (kept for forward compatibility; backend no longer requires/sends them)
-  final String? driverName;
+  final String driverName; // may be blank if backend omits
   final String? driverPhone;
-  final bool? booked;
-  final String? notes;
+  final bool booked;
+  final String pool; // keep as string to align with server 'private|commercial|commercial_private'
 
   Ride({
     required this.id,
@@ -21,48 +18,45 @@ class Ride {
     required this.when,
     required this.seats,
     required this.price,
+    required this.driverName,
+    required this.driverPhone,
+    required this.booked,
     required this.pool,
-    this.driverName,
-    this.driverPhone,
-    this.booked,
-    this.notes,
   });
 
   factory Ride.fromJson(Map<String, dynamic> json) {
-    // backend returns { id, from, to, when(ISO), seats, price, pool, notes? }
-    final whenStr = (json['when'] ?? '').toString();
-    final dt = DateTime.tryParse(whenStr);
+    // Server returns ISO datetime string under key 'when'
+    final whenStr = (json['when'] ?? json['depart_at'] ?? '').toString();
+    final parsedWhen = DateTime.tryParse(whenStr) ?? DateTime.now();
+
     return Ride(
       id: (json['id'] ?? '').toString(),
-      from: (json['from'] ?? '').toString(),
-      to: (json['to'] ?? '').toString(),
-      when: dt ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-      seats: (json['seats'] ?? 0) is int
-          ? json['seats'] as int
-          : int.tryParse(json['seats'].toString()) ?? 0,
-      price: (json['price'] ?? 0),
+      from: (json['from'] ?? json['source'] ?? '').toString(),
+      to: (json['to'] ?? json['destination'] ?? '').toString(),
+      when: parsedWhen.toLocal(),
+      seats: int.tryParse(json['seats']?.toString() ?? '') ?? (json['seats_available'] ?? 0) as int,
+      price: num.tryParse(json['price']?.toString() ?? '') ?? (json['price_per_seat_inr'] ?? 0),
+      driverName: (json['driverName'] ?? json['driver_name'] ?? '').toString(),
+      driverPhone: (json['driverPhone'] ?? json['driver_phone'])?.toString(),
+      booked: (json['booked'] is bool)
+          ? json['booked'] as bool
+          : (json['booked']?.toString() == 'true'),
       pool: (json['pool'] ?? 'private').toString(),
-      driverName: json['driverName']?.toString(),
-      driverPhone: json['driverPhone']?.toString(),
-      booked: json['booked'] as bool?,
-      notes: json['notes']?.toString(),
     );
   }
 
   Map<String, dynamic> toJson() {
-    final map = <String, dynamic>{
+    return {
       'id': id,
       'from': from,
       'to': to,
-      'when': when.toIso8601String(),
+      'when': when.toUtc().toIso8601String(),
       'seats': seats,
       'price': price,
+      'driverName': driverName,
+      if (driverPhone != null) 'driverPhone': driverPhone,
+      'booked': booked,
       'pool': pool,
     };
-    if (driverName != null) map['driverName'] = driverName;
-    if (driverPhone != null) map['driverPhone'] = driverPhone;
-    if (booked != null) map['booked'] = booked;
-    if (notes != null && notes!.isNotEmpty) map['notes'] = notes;
-    return map;
   }
 }
