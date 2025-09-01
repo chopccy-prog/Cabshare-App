@@ -23,45 +23,156 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
   String? _err;
   List<dynamic> _items = [];
 
+  Future<void> _openRide(BuildContext context, Map<String, dynamic> item) async {
+    final rideId = item['id'].toString();
+    Map<String, dynamic>? ride;
+    String? error;
+    int seats = 1;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) {
+        return StatefulBuilder(builder: (context, setState) {
+          Future<void> _load() async {
+            try {
+              final r = await widget.api.getRide(rideId);
+              setState(() => ride = r);
+            } catch (e) {
+              setState(() => error = '$e');
+            }
+          }
+
+          // trigger one-time load
+          if (ride == null && error == null) {
+            // ignore: discarded_futures
+            _load();
+          }
+
+          final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+          return Padding(
+            padding: EdgeInsets.only(bottom: bottomInset),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              child: ride == null && error == null
+                  ? const SizedBox(height: 180, child: Center(child: CircularProgressIndicator()))
+                  : error != null
+                  ? SizedBox(height: 180, child: Text(error!))
+                  : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${ride!['from']} → ${ride!['to']}',
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  Text('When: ${ride!['depart_date']} ${ride!['depart_time'] ?? ''}'),
+                  Text('Seats left: ${ride!['seats_available']} / ${ride!['seats_total']}'),
+                  Text('Price/seat: ₹${ride!['price_per_seat_inr'] ?? ride!['price_inr'] ?? 0}'),
+                  const Divider(height: 24),
+                  Text('Driver', style: Theme.of(context).textTheme.titleMedium),
+                  Text(ride!['driver']?['full_name'] ?? '—'),
+                  Text(ride!['driver']?['phone'] ?? '—'),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Text('Seats:'),
+                      IconButton(
+                        onPressed: seats > 1 ? () => setState(() => seats--) : null,
+                        icon: const Icon(Icons.remove),
+                      ),
+                      Text('$seats'),
+                      IconButton(
+                        onPressed: () {
+                          final max = (ride!['seats_available'] ?? 1) as int;
+                          if (seats < max) setState(() => seats++);
+                        },
+                        icon: const Icon(Icons.add),
+                      ),
+                      const Spacer(),
+                      ElevatedButton(
+                        onPressed: () async {
+                          try {
+                            await widget.api.requestBooking(rideId, seats);
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Booking sent')),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error: $e')),
+                              );
+                            }
+                          }
+                        },
+                        child: const Text('Request booking'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        });
+      },
+    );
+  }
+
   @override
   void dispose() {
-    _from.dispose(); _to.dispose(); _when.dispose();
+    _from.dispose();
+    _to.dispose();
+    _when.dispose();
     super.dispose();
   }
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final d = await showDatePicker(
-        context: context, initialDate: _pickedDate ?? now,
-        firstDate: now, lastDate: now.add(const Duration(days: 365)));
+      context: context,
+      initialDate: _pickedDate ?? now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
     if (d != null) {
       _pickedDate = d;
-      _when.text = "${d.year.toString().padLeft(4,'0')}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}";
+      _when.text =
+      "${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
       setState(() {});
     }
   }
 
   // client-side match identical to publish mapping
   bool _matchCategory(Map<String, dynamic> m) {
-    final isCommercial = (m['is_commercial'] == true || m['is_commercial'] == 1 || m['is_commercial'] == 'true');
+    final isCommercial =
+    (m['is_commercial'] == true || m['is_commercial'] == 1 || m['is_commercial'] == 'true');
     final pool = (m['pool'] ?? '').toString().toLowerCase();
 
     switch (_cat) {
-      case RideCategory.privatePool:       return !isCommercial && pool == 'shared';
-      case RideCategory.commercialPool:    return  isCommercial && pool == 'shared';
-      case RideCategory.commercialFullCar: return  isCommercial && pool == 'private';
+      case RideCategory.privatePool:
+        return !isCommercial && pool == 'shared';
+      case RideCategory.commercialPool:
+        return isCommercial && pool == 'shared';
+      case RideCategory.commercialFullCar:
+        return isCommercial && pool == 'private';
     }
   }
 
   Future<void> _search() async {
-    setState(() { _busy = true; _err = null; });
+    setState(() {
+      _busy = true;
+      _err = null;
+    });
     try {
       final items = await widget.api.searchRides(
         from: _from.text.trim().isEmpty ? null : _from.text.trim(),
-        to:   _to.text.trim().isEmpty   ? null : _to.text.trim(),
+        to: _to.text.trim().isEmpty ? null : _to.text.trim(),
         when: _when.text.trim().isEmpty ? null : _when.text.trim(),
       );
-      setState(() => _items = items.whereType<Map<String,dynamic>>().where(_matchCategory).toList());
+      setState(() => _items =
+          items.whereType<Map<String, dynamic>>().where(_matchCategory).toList());
     } catch (e) {
       setState(() => _err = e.toString());
     } finally {
@@ -79,9 +190,19 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(children: [
-                Expanded(child: TextField(controller: _from, decoration: const InputDecoration(labelText: 'From (e.g., Nashik)'))),
+                Expanded(
+                  child: TextField(
+                    controller: _from,
+                    decoration: const InputDecoration(labelText: 'From (e.g., Nashik)'),
+                  ),
+                ),
                 const SizedBox(width: 8),
-                Expanded(child: TextField(controller: _to, decoration: const InputDecoration(labelText: 'To (e.g., Pune)'))),
+                Expanded(
+                  child: TextField(
+                    controller: _to,
+                    decoration: const InputDecoration(labelText: 'To (e.g., Pune)'),
+                  ),
+                ),
               ]),
               const SizedBox(height: 8),
               Row(children: [
@@ -89,14 +210,25 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
                   child: TextField(
                     controller: _when,
                     readOnly: true,
-                    decoration: const InputDecoration(labelText: 'Date (tap to pick)', suffixIcon: Icon(Icons.calendar_today)),
+                    decoration: const InputDecoration(
+                      labelText: 'Date (tap to pick)',
+                      suffixIcon: Icon(Icons.calendar_today),
+                    ),
                     onTap: _pickDate,
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton.icon(onPressed: _busy ? null : _search, icon: const Icon(Icons.search), label: const Text('Search')),
+                FilledButton.icon(
+                  onPressed: _busy ? null : _search,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Search'),
+                ),
               ]),
-              if (_err != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_err!, style: const TextStyle(color: Colors.red))),
+              if (_err != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(_err!, style: const TextStyle(color: Colors.red)),
+                ),
             ],
           ),
         ),
@@ -105,9 +237,21 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
           padding: const EdgeInsets.all(12),
           child: SegmentedButton<RideCategory>(
             segments: const [
-              ButtonSegment(value: RideCategory.privatePool,       icon: Icon(Icons.directions_car), label: Text('Private Pool')),
-              ButtonSegment(value: RideCategory.commercialPool,    icon: Icon(Icons.local_taxi),    label: Text('Commercial Pool')),
-              ButtonSegment(value: RideCategory.commercialFullCar, icon: Icon(Icons.local_taxi),    label: Text('Commercial Full Car')),
+              ButtonSegment(
+                value: RideCategory.privatePool,
+                icon: Icon(Icons.directions_car),
+                label: Text('Private Pool'),
+              ),
+              ButtonSegment(
+                value: RideCategory.commercialPool,
+                icon: Icon(Icons.local_taxi),
+                label: Text('Commercial Pool'),
+              ),
+              ButtonSegment(
+                value: RideCategory.commercialFullCar,
+                icon: Icon(Icons.local_taxi),
+                label: Text('Commercial Full Car'),
+              ),
             ],
             selected: {_cat},
             onSelectionChanged: (s) => setState(() => _cat = s.first),
@@ -123,16 +267,17 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
             itemCount: _items.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
-              final m = _items[i] as Map<String,dynamic>;
-              final from  = (m['from'] ?? '').toString();
-              final to    = (m['to'] ?? '').toString();
-              final when  = (m['start_time'] ?? m['when'] ?? '').toString();
+              final m = _items[i] as Map<String, dynamic>;
+              final from = (m['from'] ?? '').toString();
+              final to = (m['to'] ?? '').toString();
+              final when = (m['start_time'] ?? m['when'] ?? '').toString();
               final price = (m['price_inr'] ?? m['price'] ?? '').toString();
               final seats = (m['seats'] ?? m['available_seats'] ?? '').toString();
               return ListTile(
                 title: Text('$from → $to'),
                 subtitle: Text('When: $when • Seats: $seats • ₹$price'),
                 trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openRide(context, m), // << enable details + booking
               );
             },
           )),

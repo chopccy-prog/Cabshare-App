@@ -67,6 +67,30 @@ class ApiClient {
     final v = j['ride'];
     return (v is Map<String, dynamic>) ? v : null;
   }
+  /// Fetch one ride with driver/car info (backend: GET /rides/:id)
+  Future<Map<String, dynamic>> getRide(String rideId) async {
+    final url = Uri.parse('$baseUrl/rides/$rideId');
+    final res = await http.get(url, headers: await defaultHeaders());
+    final body = jsonDecode(res.body);
+    if (res.statusCode >= 400) {
+      throw Exception('API ${res.statusCode}: ${jsonEncode(body)}');
+    }
+    return (body is Map<String, dynamic>) ? body : <String, dynamic>{};
+  }
+
+  /// Create a booking request (or auto-confirm if ride allows it)
+  /// backend: POST /rides/:id/book  body: { seat_count }
+  Future<void> requestBooking(String rideId, int seatCount) async {
+    final url = Uri.parse('$baseUrl/rides/$rideId/book');
+    final res = await http.post(
+      url,
+      headers: await defaultHeaders(),
+      body: jsonEncode({'seat_count': seatCount}),
+    );
+    if (res.statusCode >= 400) {
+      throw Exception('API ${res.statusCode}: ${res.body}');
+    }
+  }
 
   Future<Map<String, dynamic>?> bookRide(String rideId, int seats) async {
     final resp = await _send('POST', '/bookings/$rideId', body: {'seats': seats});
