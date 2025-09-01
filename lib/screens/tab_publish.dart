@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
+enum RideCategory { privatePool, commercialPool, commercialFullCar }
+
 class TabPublish extends StatefulWidget {
   final ApiClient api;
   const TabPublish({super.key, required this.api});
@@ -17,11 +19,7 @@ class _TabPublishState extends State<TabPublish> {
   DateTime? _pickedDate;
   TimeOfDay? _pickedTime;
 
-  String _pool = 'private';        // private | shared (existing types only)
-  bool _isCommercial = false;      // commercial flag
-
-  bool _busy = false;
-  String? _msg;
+  RideCategory _cat = RideCategory.privatePool;
 
   String _fmtDate(DateTime d) =>
       "${d.year.toString().padLeft(4,'0')}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}";
@@ -41,11 +39,20 @@ class _TabPublishState extends State<TabPublish> {
     if (t != null) setState(() => _pickedTime = t);
   }
 
+  // map category -> pool/isCommercial
+  (String pool, bool isCommercial) _mapCat() {
+    switch (_cat) {
+      case RideCategory.privatePool:       return ('shared',  false);
+      case RideCategory.commercialPool:    return ('shared',  true);
+      case RideCategory.commercialFullCar: return ('private', true);
+    }
+  }
+
   Future<void> _publish() async {
     if (_pickedDate == null || _pickedTime == null) {
-      setState(() => _msg = 'Please select date & time'); return;
+      _snack('Please select date & time'); return;
     }
-    setState(() { _busy = true; _msg = null; });
+    final (pool, isCommercial) = _mapCat();
     try {
       final ride = await widget.api.publishRide({
         'from': _from.text.trim(),
@@ -54,16 +61,16 @@ class _TabPublishState extends State<TabPublish> {
         'whenTime': _fmtTime(_pickedTime!),
         'seats': int.tryParse(_seats.text) ?? 1,
         'price': int.tryParse(_price.text) ?? 0,
-        'pool': _pool,                 // existing types
-        'isCommercial': _isCommercial, // commercial private = private + true
+        'pool': pool,
+        'isCommercial': isCommercial,
       });
-      setState(() { _msg = ride == null ? 'Failed to publish' : 'Published ride ${ride['id'] ?? ''}'; });
+      _snack(ride == null ? 'Failed to publish' : 'Published!');
     } catch (e) {
-      setState(() { _msg = 'Error: $e'; });
-    } finally {
-      setState(() { _busy = false; });
+      _snack('Error: $e');
     }
   }
+
+  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +80,7 @@ class _TabPublishState extends State<TabPublish> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
             Expanded(child: TextField(controller: _from, decoration: const InputDecoration(labelText: 'From City'))),
@@ -106,24 +114,19 @@ class _TabPublishState extends State<TabPublish> {
             Expanded(child: TextField(controller: _price, decoration: const InputDecoration(labelText: 'Price (₹)'), keyboardType: TextInputType.number)),
           ]),
           const SizedBox(height: 12),
-          Row(children: [
-            const Text('Ride type:'),
-            const SizedBox(width: 8),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'private', label: Text('Private')),
-                ButtonSegment(value: 'shared',  label: Text('Shared')),
-              ],
-              selected: {_pool},
-              onSelectionChanged: (s) => setState(() => _pool = s.first),
-            ),
-            const Spacer(),
-            const Text('Commercial'),
-            Switch(value: _isCommercial, onChanged: (v) => setState(() => _isCommercial = v)),
-          ]),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: _busy ? null : _publish, child: const Text('Publish')),
-          if (_msg != null) Padding(padding: const EdgeInsets.all(12), child: Text(_msg!)),
+          Text('Ride category', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<RideCategory>(
+            segments: const [
+              ButtonSegment(value: RideCategory.privatePool,       icon: Icon(Icons.directions_car), label: Text('Private Pool')),
+              ButtonSegment(value: RideCategory.commercialPool,    icon: Icon(Icons.local_taxi),    label: Text('Commercial Pool')),
+              ButtonSegment(value: RideCategory.commercialFullCar, icon: Icon(Icons.local_taxi),    label: Text('Commercial Full Car')),
+            ],
+            selected: {_cat},
+            onSelectionChanged: (s) => setState(() => _cat = s.first),
+          ),
+          const SizedBox(height: 16),
+          FilledButton(onPressed: _publish, child: const Text('Publish')),
         ],
       ),
     );
