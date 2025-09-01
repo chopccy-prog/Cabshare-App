@@ -1,214 +1,151 @@
-// lib/services/api_client.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../env.dart';
 
 class ApiClient {
-  ApiClient();
+  /// Final base URL for your backend, e.g. http://192.168.1.35:3000
+  final String baseUrl;
 
-  final String _base = Env.apiBase;
+  // Keep backward compatibility: old code calls ApiClient() with no args.
+  ApiClient._internal(this.baseUrl);
+  factory ApiClient() {
+    // Read from --dart-define=API_BASE=...
+    final fromEnv = const String.fromEnvironment('API_BASE', defaultValue: '');
+    final base = (fromEnv.isNotEmpty) ? fromEnv : 'http://192.168.1.35:3000';
+    return ApiClient._internal(base);
+  }
+  // Optional: if you ever want to pass an explicit base
+  factory ApiClient.withBase(String base) => ApiClient._internal(base);
 
-  // Safe extractor for "items" list from JSON responses
+  // ------------------------------
+  // Common helpers
+  // ------------------------------
+  Future<Map<String, String>> defaultHeaders() async {
+    final auth = Supabase.instance.client.auth;
+    final token = auth.currentSession?.accessToken;
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
   List<dynamic> _itemsOf(Map<String, dynamic> j) {
     final v = j['items'];
-    return (v is List) ? v : <dynamic>[];
+    return (v is List) ? v : const <dynamic>[];
   }
 
-  Future<http.Response> _send(
-      String method,
-      String path, {
-        Map<String, String>? headers,
-        Object? body,
-      }) async {
-    final session = Supabase.instance.client.auth.currentSession;
-    final token = session?.accessToken;
-
-    final uri = Uri.parse('$_base$path');
-    final req = http.Request(method, uri);
-    req.headers['Content-Type'] = 'application/json';
-    if (token != null && token.isNotEmpty) {
-      req.headers['Authorization'] = 'Bearer $token';
-    }
-    if (headers != null) req.headers.addAll(headers);
-    if (body != null) req.body = json.encode(body);
-
-    final streamed = await req.send();
-    final resp = await http.Response.fromStream(streamed);
-
-    if (resp.statusCode >= 400) {
-      // Surface backend errors in a useful way
-      throw Exception('API ${resp.statusCode}: ${resp.body}');
-    }
-    return resp;
+  Map<String, dynamic> _decodeMap(http.Response res) {
+    return json.decode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
-  // ------------------------------------------------------------
-  // Rides
-  // ------------------------------------------------------------
-  Future<List<dynamic>> searchRides({
-    String? from,
-    String? to,
-    String? when,
-  }) async {
-    final qs = <String, String>{
+  // ------------------------------
+  // Rides (search / publish / mine)
+  // ------------------------------
+  Future<List<dynamic>> searchRides({String? from, String? to, String? when}) async {
+    final uri = Uri.parse('$baseUrl/rides/search').replace(queryParameters: {
       if (from != null && from.isNotEmpty) 'from': from,
       if (to != null && to.isNotEmpty) 'to': to,
       if (when != null && when.isNotEmpty) 'when': when,
-    };
-    final resp = await _send('GET', Uri(path: '/rides/search', queryParameters: qs).toString());
-    final j = json.decode(resp.body) as Map<String, dynamic>;
+    });
+    final res = await http.get(uri, headers: await defaultHeaders());
+    final j = _decodeMap(res);
+    if (res.statusCode >= 400) {
+      throw Exception('API ${res.statusCode}: ${res.body}');
+    }
     return _itemsOf(j);
   }
 
+  /// Use the backend publish endpoint your app already calls.
+  /// Payload should include from/to/date etc. (kept same as before).
   Future<Map<String, dynamic>?> publishRide(Map<String, dynamic> payload) async {
-    final resp = await _send('POST', '/rides/publish', body: payload);
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['ride'];
-    return (v is Map<String, dynamic>) ? v : null;
+    final uri = Uri.parse('$baseUrl/rides/publish');
+    final res = await http.post(uri, headers: await defaultHeaders(), body: json.encode(payload));
+    final j = _decodeMap(res);
+    if (res.statusCode >= 400) {
+      throw Exception('API ${res.statusCode}: ${res.body}');
+    }
+    final r = j['ride'];
+    return (r is Map<String, dynamic>) ? r : null;
   }
-  /// Fetch one ride with driver/car info (backend: GET /rides/:id)
+
+  /// Old usage in your code was: myRides('driver') / myRides('rider')
+  Future<List<dynamic>> myRides(String role) async {
+    final uri = Uri.parse('$baseUrl/rides/mine').replace(queryParameters: {'role': role});
+    final res = await http.get(uri, headers: await defaultHeaders());
+    final j = _decodeMap(res);
+    if (res.statusCode >= 400) {
+      throw Exception('API ${res.statusCode}: ${res.body}');
+    }
+    return _itemsOf(j);
+  }
+
+  // ------------------------------
+  // Ride details + booking (new)
+  // ------------------------------
+  /// GET /rides/:id  -> ride with driver info
   Future<Map<String, dynamic>> getRide(String rideId) async {
     final url = Uri.parse('$baseUrl/rides/$rideId');
     final res = await http.get(url, headers: await defaultHeaders());
-    final body = jsonDecode(res.body);
+    final j = _decodeMap(res);
     if (res.statusCode >= 400) {
-      throw Exception('API ${res.statusCode}: ${jsonEncode(body)}');
+      throw Exception('API ${res.statusCode}: ${jsonEncode(j)}');
     }
-    return (body is Map<String, dynamic>) ? body : <String, dynamic>{};
+    return j;
   }
 
-  /// Create a booking request (or auto-confirm if ride allows it)
-  /// backend: POST /rides/:id/book  body: { seat_count }
+  /// POST /rides/:id/book { seat_count }
   Future<void> requestBooking(String rideId, int seatCount) async {
     final url = Uri.parse('$baseUrl/rides/$rideId/book');
     final res = await http.post(
       url,
       headers: await defaultHeaders(),
-      body: jsonEncode({'seat_count': seatCount}),
+      body: json.encode({'seat_count': seatCount}),
     );
     if (res.statusCode >= 400) {
       throw Exception('API ${res.statusCode}: ${res.body}');
     }
   }
 
-  Future<Map<String, dynamic>?> bookRide(String rideId, int seats) async {
-    final resp = await _send('POST', '/bookings/$rideId', body: {'seats': seats});
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['booking'];
-    return (v is Map<String, dynamic>) ? v : null;
-  }
-
-  Future<List<dynamic>> myRides(String role) async {
-    final resp = await _send('GET', '/rides/mine?role=$role');
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
-  }
-
-  // ------------------------------------------------------------
-  // Inbox
-  // ------------------------------------------------------------
-// --- Inbox (replace all three methods with these) ---
-
-  Future<List<dynamic>> inbox() async {
-    final resp = await _send('GET', '/inbox');
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
-  }
-
+  // ------------------------------
+  // Inbox / Messages
+  // ------------------------------
+  /// Old code calls: messages(rideId, otherUserId)
   Future<List<dynamic>> messages(String rideId, String otherUserId) async {
-    final uri = Uri(path: '/inbox/$rideId/messages', queryParameters: {'with': otherUserId}).toString();
-    final resp = await _send('GET', uri);
-    final j = json.decode(resp.body) as Map<String, dynamic>;
+    final url = Uri.parse('$baseUrl/messages')
+        .replace(queryParameters: {'ride_id': rideId, 'other_user_id': otherUserId});
+    final res = await http.get(url, headers: await defaultHeaders());
+    final j = _decodeMap(res);
+    if (res.statusCode >= 400) {
+      throw Exception('API ${res.statusCode}: ${res.body}');
+    }
+    return _itemsOf(j);
+  }
+  /// List inbox items (conversations/messages) for the current user.
+  /// Backend: GET $API_BASE/messages  -> { items: [...] }
+  Future<List<dynamic>> inbox() async {
+    final url = Uri.parse('$baseUrl/messages');
+    final res = await http.get(url, headers: await defaultHeaders());
+    final j = _decodeMap(res);
+    if (res.statusCode >= 400) {
+      throw Exception('API ${res.statusCode}: ${res.body}');
+    }
     return _itemsOf(j);
   }
 
-  Future<Map<String, dynamic>?> sendMessage(String rideId, String toUserId, String text) async {
-    final resp = await _send('POST', '/inbox/$rideId/messages', body: {'to': toUserId, 'text': text});
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['message'];
-    return (v is Map<String, dynamic>) ? v : null;
-  }
-
-
-  // ------------------------------------------------------------
-  // Admin (requires backend service-role key configured)
-  // ------------------------------------------------------------
-  Future<List<dynamic>> adminListCities() async {
-    final resp = await _send('GET', '/admin/cities');
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
-  }
-
-  Future<Map<String, dynamic>> adminUpsertCity(String name) async {
-    final resp = await _send('POST', '/admin/cities', body: {'name': name});
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['city'];
-    if (v is Map<String, dynamic>) return v;
-    throw Exception('Malformed response: missing "city"');
-  }
-
-  Future<List<dynamic>> adminListRoutes() async {
-    final resp = await _send('GET', '/admin/routes');
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
-  }
-
-  Future<Map<String, dynamic>> adminCreateRoute({
-    required String code,
-    required int fromCityId,
-    required int toCityId,
-    required num distanceKm,
-  }) async {
-    final resp = await _send('POST', '/admin/routes', body: {
-      'code': code,
-      'from_city_id': fromCityId,
-      'to_city_id': toCityId,
-      'distance_km': distanceKm,
-    });
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['route'];
-    if (v is Map<String, dynamic>) return v;
-    throw Exception('Malformed response: missing "route"');
-  }
-
-  Future<List<dynamic>> adminListStops() async {
-    final resp = await _send('GET', '/admin/stops');
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    return _itemsOf(j);
-  }
-
-  Future<Map<String, dynamic>> adminCreateStop({
-    required String name,
-    required double lat,
-    required double lon,
-    required int cityId,
-  }) async {
-    final resp = await _send('POST', '/admin/stops', body: {
-      'name': name,
-      'lat': lat,
-      'lon': lon,
-      'city_id': cityId,
-    });
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['stop'];
-    if (v is Map<String, dynamic>) return v;
-    throw Exception('Malformed response: missing "stop"');
-  }
-
-  Future<Map<String, dynamic>> adminAttachStopToRoute({
-    required int routeId,
-    required int stopId,
-    required int rank,
-  }) async {
-    final resp = await _send('POST', '/admin/route-stops', body: {
-      'route_id': routeId,
-      'stop_id': stopId,
-      'rank': rank,
-    });
-    final j = json.decode(resp.body) as Map<String, dynamic>;
-    final v = j['routeStop'];
-    if (v is Map<String, dynamic>) return v;
-    throw Exception('Malformed response: missing "routeStop"');
+  /// Old code calls: sendMessage(rideId, otherUserId, text)
+  Future<void> sendMessage(String rideId, String otherUserId, String text) async {
+    final url = Uri.parse('$baseUrl/messages');
+    final res = await http.post(
+      url,
+      headers: await defaultHeaders(),
+      body: json.encode({
+        'ride_id': rideId,
+        'recipient_id': otherUserId,
+        'text': text,
+      }),
+    );
+    if (res.statusCode >= 400) {
+      throw Exception('API ${res.statusCode}: ${res.body}');
+    }
   }
 }
