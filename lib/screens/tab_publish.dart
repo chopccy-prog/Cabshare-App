@@ -1,11 +1,11 @@
+// lib/screens/tab_publish.dart
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
-
-enum RideCategory { privatePool, commercialPool, commercialFullCar }
 
 class TabPublish extends StatefulWidget {
   final ApiClient api;
   const TabPublish({super.key, required this.api});
+
   @override
   State<TabPublish> createState() => _TabPublishState();
 }
@@ -13,122 +13,132 @@ class TabPublish extends StatefulWidget {
 class _TabPublishState extends State<TabPublish> {
   final _from = TextEditingController();
   final _to = TextEditingController();
-  final _seats = TextEditingController(text: '3');
-  final _price = TextEditingController(text: '200');
+  final _date = TextEditingController();
+  final _time = TextEditingController();
+  final _seats = TextEditingController(text: '1');
+  final _price = TextEditingController(text: '0');
 
-  DateTime? _pickedDate;
-  TimeOfDay? _pickedTime;
+  String _rideType = 'private'; // private | shared | commercial_full
+  bool _busy = false;
+  String? _err;
 
-  RideCategory _cat = RideCategory.privatePool;
-
-  String _fmtDate(DateTime d) =>
-      "${d.year.toString().padLeft(4,'0')}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}";
-  String _fmtTime(TimeOfDay t) =>
-      "${t.hour.toString().padLeft(2,'0')}:${t.minute.toString().padLeft(2,'0')}";
+  @override
+  void dispose() {
+    _from.dispose();
+    _to.dispose();
+    _date.dispose();
+    _time.dispose();
+    _seats.dispose();
+    _price.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final d = await showDatePicker(
-        context: context, initialDate: _pickedDate ?? now,
-        firstDate: now, lastDate: now.add(const Duration(days: 365)));
-    if (d != null) setState(() => _pickedDate = d);
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (d != null) {
+      _date.text =
+      "${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+      setState(() {});
+    }
   }
 
   Future<void> _pickTime() async {
-    final t = await showTimePicker(context: context, initialTime: _pickedTime ?? TimeOfDay.now());
-    if (t != null) setState(() => _pickedTime = t);
-  }
-
-  // map category -> pool/isCommercial
-  (String pool, bool isCommercial) _mapCat() {
-    switch (_cat) {
-      case RideCategory.privatePool:       return ('shared',  false);
-      case RideCategory.commercialPool:    return ('shared',  true);
-      case RideCategory.commercialFullCar: return ('private', true);
+    final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    if (t != null) {
+      _time.text = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
+      setState(() {});
     }
   }
 
   Future<void> _publish() async {
-    if (_pickedDate == null || _pickedTime == null) {
-      _snack('Please select date & time'); return;
-    }
-    final (pool, isCommercial) = _mapCat();
+    setState(() { _busy = true; _err = null; });
     try {
-      final ride = await widget.api.publishRide({
-        'from': _from.text.trim(),
-        'to': _to.text.trim(),
-        'whenDate': _fmtDate(_pickedDate!),
-        'whenTime': _fmtTime(_pickedTime!),
-        'seats': int.tryParse(_seats.text) ?? 1,
-        'price': int.tryParse(_price.text) ?? 0,
-        'pool': pool,
-        'isCommercial': isCommercial,
-      });
-      _snack(ride == null ? 'Failed to publish' : 'Published!');
+      if (_date.text.isEmpty) {
+        throw Exception('missing required fields: depart_date');
+      }
+      final seats = int.tryParse(_seats.text) ?? 1;
+      final price = int.tryParse(_price.text) ?? 0;
+
+      await widget.api.publishRide(
+        fromLocation: _from.text.trim(),
+        toLocation: _to.text.trim(),
+        departDate: _date.text.trim(),      // yyyy-MM-dd
+        departTime: _time.text.trim(),      // HH:mm
+        seatsTotal: seats,
+        pricePerSeatInr: price,
+        rideType: _rideType,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ride published')));
+      _from.clear(); _to.clear(); _time.clear(); _seats.text = '1'; _price.text = '0';
     } catch (e) {
-      _snack('Error: $e');
+      setState(() => _err = e.toString());
+    } finally {
+      setState(() => _busy = false);
     }
   }
 
-  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
-
   @override
   Widget build(BuildContext context) {
-    final dateLabel = _pickedDate == null ? 'Pick date' : _fmtDate(_pickedDate!);
-    final timeLabel = _pickedTime == null ? 'Pick time' : _fmtTime(_pickedTime!);
-
-    return SingleChildScrollView(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Expanded(child: TextField(controller: _from, decoration: const InputDecoration(labelText: 'From City'))),
-            const SizedBox(width: 8),
-            Expanded(child: TextField(controller: _to, decoration: const InputDecoration(labelText: 'To City'))),
-          ]),
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(
-              child: FilledButton.tonal(
-                onPressed: _pickDate,
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Icon(Icons.calendar_today), const SizedBox(width: 8), Text(dateLabel),
-                ]),
-              ),
+      children: [
+        Row(children: [
+          Expanded(child: TextField(controller: _from, decoration: const InputDecoration(labelText: 'From City'))),
+          const SizedBox(width: 12),
+          Expanded(child: TextField(controller: _to,   decoration: const InputDecoration(labelText: 'To City'))),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(
+            child: TextField(
+              controller: _date,
+              readOnly: true,
+              decoration: const InputDecoration(labelText: 'Date (YYYY-MM-DD)', suffixIcon: Icon(Icons.calendar_today)),
+              onTap: _pickDate,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton.tonal(
-                onPressed: _pickTime,
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Icon(Icons.access_time), const SizedBox(width: 8), Text(timeLabel),
-                ]),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(child: TextField(controller: _seats, decoration: const InputDecoration(labelText: 'Seats'), keyboardType: TextInputType.number)),
-            const SizedBox(width: 8),
-            Expanded(child: TextField(controller: _price, decoration: const InputDecoration(labelText: 'Price (₹)'), keyboardType: TextInputType.number)),
-          ]),
-          const SizedBox(height: 12),
-          Text('Ride category', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          SegmentedButton<RideCategory>(
-            segments: const [
-              ButtonSegment(value: RideCategory.privatePool,       icon: Icon(Icons.directions_car), label: Text('Private Pool')),
-              ButtonSegment(value: RideCategory.commercialPool,    icon: Icon(Icons.local_taxi),    label: Text('Commercial Pool')),
-              ButtonSegment(value: RideCategory.commercialFullCar, icon: Icon(Icons.local_taxi),    label: Text('Commercial Full Car')),
-            ],
-            selected: {_cat},
-            onSelectionChanged: (s) => setState(() => _cat = s.first),
           ),
-          const SizedBox(height: 16),
-          FilledButton(onPressed: _publish, child: const Text('Publish')),
-        ],
-      ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _time,
+              readOnly: true,
+              decoration: const InputDecoration(labelText: 'Time (HH:mm)', suffixIcon: Icon(Icons.access_time)),
+              onTap: _pickTime,
+            ),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextField(controller: _seats, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Seats'))),
+          const SizedBox(width: 12),
+          Expanded(child: TextField(controller: _price, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Price (₹/seat)'))),
+        ]),
+        const SizedBox(height: 16),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'private',         icon: Icon(Icons.directions_car), label: Text('Private Pool')),
+            ButtonSegment(value: 'shared',          icon: Icon(Icons.local_taxi),     label: Text('Commercial Pool')),
+            ButtonSegment(value: 'commercial_full', icon: Icon(Icons.local_taxi),     label: Text('Commercial Full Car')),
+          ],
+          selected: {_rideType},
+          onSelectionChanged: (s) => setState(() => _rideType = s.first),
+        ),
+        const SizedBox(height: 16),
+        if (_err != null) Text(_err!, style: const TextStyle(color: Colors.red)),
+        const SizedBox(height: 8),
+        FilledButton(
+          onPressed: _busy ? null : _publish,
+          child: const Text('Publish'),
+        ),
+      ],
     );
   }
 }

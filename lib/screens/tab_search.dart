@@ -1,3 +1,4 @@
+// lib/screens/tab_search.dart
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
@@ -11,20 +12,70 @@ class TabSearch extends StatefulWidget {
   State<TabSearch> createState() => _TabSearchState();
 }
 
-class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMixin {
+class _TabSearchState extends State<TabSearch> {
   final _from = TextEditingController();
   final _to = TextEditingController();
   final _when = TextEditingController();
-  DateTime? _pickedDate;
-
   RideCategory _cat = RideCategory.privatePool;
 
   bool _busy = false;
   String? _err;
-  List<dynamic> _items = [];
+  List<Map<String, dynamic>> _items = [];
 
-  Future<void> _openRide(BuildContext context, Map<String, dynamic> item) async {
-    final rideId = item['id'].toString();
+  @override
+  void dispose() {
+    _from.dispose();
+    _to.dispose();
+    _when.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (d != null) {
+      _when.text =
+      "${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+      setState(() {});
+    }
+  }
+
+  bool _matchCategory(Map<String, dynamic> m) {
+    final t = (m['ride_type'] ?? 'private').toString();
+    switch (_cat) {
+      case RideCategory.privatePool:
+        return t == 'private';
+      case RideCategory.commercialPool:
+        return t == 'shared';
+      case RideCategory.commercialFullCar:
+        return t == 'commercial_full';
+    }
+  }
+
+  Future<void> _search() async {
+    setState(() { _busy = true; _err = null; });
+    try {
+      final list = await widget.api.searchRides(
+        from: _from.text.trim(),
+        to: _to.text.trim(),
+        when: _when.text.trim(),
+      );
+      final items = list.whereType<Map<String, dynamic>>().where(_matchCategory).toList();
+      setState(() => _items = items);
+    } catch (e) {
+      setState(() => _err = e.toString());
+    } finally {
+      setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openRide(Map<String, dynamic> m) async {
+    final rideId = m['id'].toString();
     Map<String, dynamic>? ride;
     String? error;
     int seats = 1;
@@ -32,42 +83,41 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) {
-        return StatefulBuilder(builder: (context, setState) {
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setSheet) {
           Future<void> _load() async {
             try {
               final r = await widget.api.getRide(rideId);
-              setState(() => ride = r);
+              setSheet(() => ride = r);
             } catch (e) {
-              setState(() => error = '$e');
+              setSheet(() => error = '$e');
             }
           }
 
-          // trigger one-time load
           if (ride == null && error == null) {
             // ignore: discarded_futures
             _load();
           }
 
-          final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+          final inset = MediaQuery.of(ctx).viewInsets.bottom;
           return Padding(
-            padding: EdgeInsets.only(bottom: bottomInset),
+            padding: EdgeInsets.only(bottom: inset),
             child: Container(
               padding: const EdgeInsets.all(16),
-              child: ride == null && error == null
+              child: (ride == null && error == null)
                   ? const SizedBox(height: 180, child: Center(child: CircularProgressIndicator()))
-                  : error != null
+                  : (error != null)
                   ? SizedBox(height: 180, child: Text(error!))
                   : Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${ride!['from']} → ${ride!['to']}',
+                  Text('${ride!['from_location']} → ${ride!['to_location']}',
                       style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 8),
                   Text('When: ${ride!['depart_date']} ${ride!['depart_time'] ?? ''}'),
                   Text('Seats left: ${ride!['seats_available']} / ${ride!['seats_total']}'),
-                  Text('Price/seat: ₹${ride!['price_per_seat_inr'] ?? ride!['price_inr'] ?? 0}'),
+                  Text('Price/seat: ₹${ride!['price_per_seat_inr'] ?? 0}'),
                   const Divider(height: 24),
                   Text('Driver', style: Theme.of(context).textTheme.titleMedium),
                   Text(ride!['driver']?['full_name'] ?? '—'),
@@ -77,19 +127,19 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
                     children: [
                       const Text('Seats:'),
                       IconButton(
-                        onPressed: seats > 1 ? () => setState(() => seats--) : null,
+                        onPressed: seats > 1 ? () => setSheet(() => seats--) : null,
                         icon: const Icon(Icons.remove),
                       ),
                       Text('$seats'),
                       IconButton(
                         onPressed: () {
                           final max = (ride!['seats_available'] ?? 1) as int;
-                          if (seats < max) setState(() => seats++);
+                          if (seats < max) setSheet(() => seats++);
                         },
                         icon: const Icon(Icons.add),
                       ),
                       const Spacer(),
-                      ElevatedButton(
+                      FilledButton(
                         onPressed: () async {
                           try {
                             await widget.api.requestBooking(rideId, seats);
@@ -121,66 +171,6 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
   }
 
   @override
-  void dispose() {
-    _from.dispose();
-    _to.dispose();
-    _when.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      initialDate: _pickedDate ?? now,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
-    );
-    if (d != null) {
-      _pickedDate = d;
-      _when.text =
-      "${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
-      setState(() {});
-    }
-  }
-
-  // client-side match identical to publish mapping
-  bool _matchCategory(Map<String, dynamic> m) {
-    final isCommercial =
-    (m['is_commercial'] == true || m['is_commercial'] == 1 || m['is_commercial'] == 'true');
-    final pool = (m['pool'] ?? '').toString().toLowerCase();
-
-    switch (_cat) {
-      case RideCategory.privatePool:
-        return !isCommercial && pool == 'shared';
-      case RideCategory.commercialPool:
-        return isCommercial && pool == 'shared';
-      case RideCategory.commercialFullCar:
-        return isCommercial && pool == 'private';
-    }
-  }
-
-  Future<void> _search() async {
-    setState(() {
-      _busy = true;
-      _err = null;
-    });
-    try {
-      final items = await widget.api.searchRides(
-        from: _from.text.trim().isEmpty ? null : _from.text.trim(),
-        to: _to.text.trim().isEmpty ? null : _to.text.trim(),
-        when: _when.text.trim().isEmpty ? null : _when.text.trim(),
-      );
-      setState(() => _items =
-          items.whereType<Map<String, dynamic>>().where(_matchCategory).toList());
-    } catch (e) {
-      setState(() => _err = e.toString());
-    } finally {
-      setState(() => _busy = false);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
@@ -190,19 +180,9 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(children: [
-                Expanded(
-                  child: TextField(
-                    controller: _from,
-                    decoration: const InputDecoration(labelText: 'From (e.g., Nashik)'),
-                  ),
-                ),
+                Expanded(child: TextField(controller: _from, decoration: const InputDecoration(labelText: 'From (e.g., Nashik)'))),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _to,
-                    decoration: const InputDecoration(labelText: 'To (e.g., Pune)'),
-                  ),
-                ),
+                Expanded(child: TextField(controller: _to, decoration: const InputDecoration(labelText: 'To (e.g., Pune)'))),
               ]),
               const SizedBox(height: 8),
               Row(children: [
@@ -210,25 +190,14 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
                   child: TextField(
                     controller: _when,
                     readOnly: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Date (tap to pick)',
-                      suffixIcon: Icon(Icons.calendar_today),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Date (tap to pick)', suffixIcon: Icon(Icons.calendar_today)),
                     onTap: _pickDate,
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: _busy ? null : _search,
-                  icon: const Icon(Icons.search),
-                  label: const Text('Search'),
-                ),
+                FilledButton.icon(onPressed: _busy ? null : _search, icon: const Icon(Icons.search), label: const Text('Search')),
               ]),
-              if (_err != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(_err!, style: const TextStyle(color: Colors.red)),
-                ),
+              if (_err != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_err!, style: const TextStyle(color: Colors.red))),
             ],
           ),
         ),
@@ -237,21 +206,9 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
           padding: const EdgeInsets.all(12),
           child: SegmentedButton<RideCategory>(
             segments: const [
-              ButtonSegment(
-                value: RideCategory.privatePool,
-                icon: Icon(Icons.directions_car),
-                label: Text('Private Pool'),
-              ),
-              ButtonSegment(
-                value: RideCategory.commercialPool,
-                icon: Icon(Icons.local_taxi),
-                label: Text('Commercial Pool'),
-              ),
-              ButtonSegment(
-                value: RideCategory.commercialFullCar,
-                icon: Icon(Icons.local_taxi),
-                label: Text('Commercial Full Car'),
-              ),
+              ButtonSegment(value: RideCategory.privatePool,       icon: Icon(Icons.directions_car), label: Text('Private Pool')),
+              ButtonSegment(value: RideCategory.commercialPool,    icon: Icon(Icons.local_taxi),    label: Text('Commercial Pool')),
+              ButtonSegment(value: RideCategory.commercialFullCar, icon: Icon(Icons.local_taxi),    label: Text('Commercial Full Car')),
             ],
             selected: {_cat},
             onSelectionChanged: (s) => setState(() => _cat = s.first),
@@ -267,17 +224,17 @@ class _TabSearchState extends State<TabSearch> with SingleTickerProviderStateMix
             itemCount: _items.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
-              final m = _items[i] as Map<String, dynamic>;
-              final from = (m['from'] ?? '').toString();
-              final to = (m['to'] ?? '').toString();
-              final when = (m['start_time'] ?? m['when'] ?? '').toString();
-              final price = (m['price_inr'] ?? m['price'] ?? '').toString();
-              final seats = (m['seats'] ?? m['available_seats'] ?? '').toString();
+              final m = _items[i];
+              final from  = (m['from_location'] ?? '').toString();
+              final to    = (m['to_location'] ?? '').toString();
+              final when  = '${m['depart_date'] ?? ''} ${m['depart_time'] ?? ''}'.trim();
+              final price = (m['price_per_seat_inr'] ?? '').toString();
+              final seats = (m['seats_available'] ?? '').toString();
               return ListTile(
                 title: Text('$from → $to'),
                 subtitle: Text('When: $when • Seats: $seats • ₹$price'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openRide(context, m), // << enable details + booking
+                onTap: () => _openRide(m),
               );
             },
           )),
