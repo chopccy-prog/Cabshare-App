@@ -1,11 +1,17 @@
 // lib/services/api_client.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Backend base URL (override at run time with --dart-define)
+/// Base URL:
+/// Prefer:  flutter run --dart-define=API_BASE_URL=http://192.168.1.35:3000
+/// Legacy:  --dart-define=API_BASE=...  (we accept both)
 const String kApiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://192.168.1.35:3000',
+  defaultValue: String.fromEnvironment(
+    'API_BASE',
+    defaultValue: 'http://192.168.1.35:3000',
+  ),
 );
 
 class ApiClient {
@@ -15,10 +21,29 @@ class ApiClient {
   ApiClient({String? baseUrl, this.tokenProvider})
       : baseUrl = (baseUrl ?? kApiBaseUrl).replaceAll(RegExp(r'/$'), '');
 
+  /// Always attach:
+  /// - Content-Type: application/json
+  /// - Authorization: Bearer <supabase access token>  (if available)
+  /// - x-user-id: <supabase user id>                  (if available)
   Future<Map<String, String>> defaultHeaders() async {
     final h = <String, String>{'Content-Type': 'application/json'};
-    final token = await tokenProvider?.call();
-    if (token != null && token.isNotEmpty) h['Authorization'] = 'Bearer $token';
+
+    // Try the provided tokenProvider first
+    String? token = await tokenProvider?.call();
+
+    // Fallback to Supabase singleton (works even if tokenProvider not passed)
+    final session = Supabase.instance.client.auth.currentSession;
+    token ??= session?.accessToken;
+
+    if (token != null && token.isNotEmpty) {
+      h['Authorization'] = 'Bearer $token';
+    }
+
+    final uid = session?.user.id;
+    if (uid != null && uid.isNotEmpty) {
+      h['x-user-id'] = uid;
+    }
+
     return h;
   }
 
@@ -55,14 +80,12 @@ class ApiClient {
 
   // ---------- PUBLISH RIDE ----------
   //
-  // Back-compat params supported by UI:
+  // Keep UI param names exactly as used by TabPublish:
   //  - fromLocation, toLocation, departDate, departTime
-  //  - pricePerSeatInr  (primary)  | priceInr (legacy)
-  //  - seatsTotal | seats (either is fine)
-  //  - rideType: "privatePool" | "commercialPool" | "commercialFullCar"
-  // Newer explicit params (optional, used if rideType is null):
-  //  - pool: "shared" | "private"
-  //  - isCommercial: bool
+  //  - pricePerSeatInr
+  //  - seatsTotal | seats (either)
+  //  - rideType: 'privatePool' | 'commercialPool' | 'commercialFullCar'
+  // (Also supports explicit pool/isCommercial if rideType null)
   Future<Map<String, dynamic>> publishRide({
     required String fromLocation,
     required String toLocation,
@@ -71,24 +94,15 @@ class ApiClient {
     required int pricePerSeatInr,
     int? seatsTotal,
     int? seats,
-
-    // legacy UI param:
     String? rideType,
-
-    // explicit (if rideType not provided):
     String? pool,
     bool? isCommercial,
-
-    // legacy price alias (ignored if pricePerSeatInr is present)
-    int? priceInr,
+    int? priceInr, // legacy alias, ignored if pricePerSeatInr present
   }) async {
-    // Seats
     final totalSeats = seatsTotal ?? seats ?? 1;
-
-    // Price
     final price = pricePerSeatInr != 0 ? pricePerSeatInr : (priceInr ?? 0);
 
-    // Derive pool + isCommercial from rideType if provided
+    // Derive pool/isCommercial from rideType if provided
     String resolvedPool = pool ?? 'shared';
     bool resolvedCommercial = isCommercial ?? false;
     if (rideType != null) {
@@ -104,9 +118,6 @@ class ApiClient {
         case 'commercialFullCar':
           resolvedPool = 'private';
           resolvedCommercial = true;
-          break;
-        default:
-        // keep provided pool/isCommercial defaults
           break;
       }
     }
@@ -134,7 +145,6 @@ class ApiClient {
   }
 
   // ---------- YOUR RIDES ----------
-  // role: 'driver' or 'rider'
   Future<List<dynamic>> myRides(String role) async {
     final uri =
     Uri.parse('$baseUrl/rides/mine').replace(queryParameters: {'role': role});
@@ -155,7 +165,7 @@ class ApiClient {
     return (data is Map<String, dynamic>) ? data : <String, dynamic>{};
   }
 
-  // ---------- INBOX LIST ----------
+  // ---------- INBOX ----------
   Future<List<dynamic>> inbox() async {
     final uri = Uri.parse('$baseUrl/inbox');
     final res = await http.get(uri, headers: await defaultHeaders());
@@ -163,27 +173,25 @@ class ApiClient {
     return (data is List) ? data : <dynamic>[];
   }
 
-  // ---------- MESSAGES THREAD ----------
+  // ---------- MESSAGES ----------
+  // Use /messages to align with backend stubs; avoids 404 if /inbox/thread isn't present.
   Future<List<dynamic>> messages(String rideId, String otherUserId) async {
-    final uri = Uri.parse('$baseUrl/inbox/thread').replace(queryParameters: {
-      'rideId': rideId,
-      'otherUserId': otherUserId,
-    });
+    final uri = Uri.parse('$baseUrl/messages')
+        .replace(queryParameters: {'ride_id': rideId, 'other_id': otherUserId});
     final res = await http.get(uri, headers: await defaultHeaders());
     final data = _handle(res);
     return (data is List) ? data : <dynamic>[];
   }
 
-  // ---------- SEND MESSAGE ----------
   Future<Map<String, dynamic>> sendMessage(
       String rideId, String otherUserId, String text) async {
-    final uri = Uri.parse('$baseUrl/inbox/send');
+    final uri = Uri.parse('$baseUrl/messages');
     final res = await http.post(
       uri,
       headers: await defaultHeaders(),
       body: json.encode({
         'ride_id': rideId,
-        'to_user_id': otherUserId,
+        'other_id': otherUserId,
         'text': text,
       }),
     );
