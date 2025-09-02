@@ -3,118 +3,265 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Read from --dart-define=API_BASE=http://<LAN-IP>:3000
+const String kApiBase = String.fromEnvironment(
+  'API_BASE',
+  defaultValue: 'http://10.0.2.2:3000',
+);
+
+class ApiException implements Exception {
+  final int status;
+  final String message;
+  ApiException(this.status, this.message);
+  @override
+  String toString() => 'API $status: $message';
+}
+
 class ApiClient {
-  // For real device on same Wi-Fi, replace with your machine LAN IP, e.g. http://192.168.1.10:3000
-  static const String _fallbackBase = String.fromEnvironment(
-    'CABSHARE_BASE_URL',
-    defaultValue: 'http://10.0.2.2:3000',
-  );
-
   final String baseUrl;
-  ApiClient({String? baseUrl}) : baseUrl = baseUrl ?? _fallbackBase;
+  ApiClient({String? baseUrl}) : baseUrl = baseUrl ?? kApiBase;
 
-  Future<Map<String, String>> _defaultHeaders() async {
-    final token = Supabase.instance.client.auth.currentSession?.accessToken;
-    final h = <String, String>{'Content-Type': 'application/json'};
+  SupabaseClient get _sb => Supabase.instance.client;
+
+  Future<Map<String, String>> defaultHeaders({bool json = true}) async {
+    final h = <String, String>{};
+    if (json) h['Content-Type'] = 'application/json';
+    final token = _sb.auth.currentSession?.accessToken;
     if (token != null) h['Authorization'] = 'Bearer $token';
     return h;
-    // If you are NOT using Supabase auth in the app, remove Authorization.
   }
 
-  // -------- Rides --------
-
+  // ------------------ SEARCH --------------------------------------------------
   Future<List<dynamic>> searchRides({
     String? from,
     String? to,
-    String? when, // yyyy-MM-dd
+    String? when, // YYYY-MM-DD
   }) async {
     final qp = <String, String>{};
-    if (from != null && from.isNotEmpty) qp['from_location'] = from;
-    if (to != null && to.isNotEmpty)     qp['to_location']   = to;
-    if (when != null && when.isNotEmpty) qp['depart_date']   = when;
+    if (from != null && from.trim().isNotEmpty) qp['from'] = from.trim();
+    if (to != null && to.trim().isNotEmpty)     qp['to']   = to.trim();
+    if (when != null && when.trim().isNotEmpty) qp['date'] = when.trim();
 
-    final url = Uri.parse('$baseUrl/rides').replace(queryParameters: qp);
-    final res = await http.get(url, headers: await _defaultHeaders());
+    final url = Uri.parse('$baseUrl/rides').replace(
+      queryParameters: qp.isEmpty ? null : qp,
+    );
 
-    if (res.statusCode != 200) {
-      throw Exception('API ${res.statusCode}: ${res.body}');
+    final res = await http.get(url, headers: await defaultHeaders());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final v = jsonDecode(res.body);
+      if (v is List) return v;
+      return <dynamic>[];
     }
-    final decoded = json.decode(res.body);
-    if (decoded is List) return decoded;
-    throw Exception('Unexpected response (expected list)');
+    throw ApiException(res.statusCode, res.body);
   }
 
+  // ------------------ DETAILS -------------------------------------------------
   Future<Map<String, dynamic>> getRide(String rideId) async {
     final url = Uri.parse('$baseUrl/rides/$rideId');
-    final res = await http.get(url, headers: await _defaultHeaders());
-    if (res.statusCode != 200) {
-      throw Exception('API ${res.statusCode}: ${res.body}');
+    final res = await http.get(url, headers: await defaultHeaders());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final v = jsonDecode(res.body);
+      if (v is Map<String, dynamic>) return v;
+      throw ApiException(500, 'bad_payload');
     }
-    final decoded = json.decode(res.body);
-    if (decoded is Map<String, dynamic>) return decoded;
-    throw Exception('Unexpected response (expected object)');
+    throw ApiException(res.statusCode, res.body);
+  }
+// ------------------ PUBLISH -------------------------------------------------
+  /// Backward-compatible publish that also accepts `rideType` from tab_publish.dart.
+  ///
+  /// Accepts BOTH old and new names used across screens:
+  /// - fromLocation/fromCity, toLocation/toCity
+  /// - date/departDate, time/departTime
+  /// - seats/seatsTotal
+  /// - pricePerSeatInr/priceInr/price_per_seat_inr
+  /// - category OR rideType (enum/string/int)
+  Future<Map<String, dynamic>> publishRide({
+    // from / to (accept both)
+    String? fromLocation,
+    String? fromCity,
+    String? toLocation,
+    String? toCity,
+
+    // date / time (accept both)
+    String? date,        // YYYY-MM-DD
+    String? departDate,  // YYYY-MM-DD
+    String? time,        // HH:mm
+    String? departTime,  // HH:mm or HH:mm:ss
+
+    // seats / price (accept several spellings)
+    int? seats,
+    int? seatsTotal,
+    int? priceInr,
+    int? price_per_seat_inr,
+    int? pricePerSeatInr,
+
+    // either of these may be provided by different screens
+    String? category,    // 'private_pool' | 'commercial_pool' | 'commercial_full_car'
+    dynamic rideType,    // enum | string | int (0/1/2)
+
+    // optional direct flags if some other screen provides them
+    bool? isCommercial,
+    String? pool, // 'shared' | 'private'
+  }) async {
+    final from = (fromLocation ?? fromCity ?? '').trim();
+    final to   = (toLocation   ?? toCity   ?? '').trim();
+    final d    = (departDate ?? date ?? '').trim();
+    final t    = (departTime ?? time ?? '').trim();
+
+    final seatCount = seatsTotal ?? seats ?? 0;
+    final price     = pricePerSeatInr ?? priceInr ?? price_per_seat_inr ?? 0;
+
+    // normalize rideType/category → 'private_pool' | 'commercial_pool' | 'commercial_full_car'
+    String _normalizeKind(dynamic rt, String? cat) {
+      if (cat != null && cat.isNotEmpty) return cat.toLowerCase();
+      if (rt == null) return 'private_pool';
+
+      if (rt is String) {
+        final s = rt.toLowerCase().replaceAll(' ', '_');
+        return (s == 'private_pool' || s == 'commercial_pool' || s == 'commercial_full_car')
+            ? s
+            : s.contains('full') ? 'commercial_full_car'
+            : s.contains('commercial') ? 'commercial_pool'
+            : 'private_pool';
+      }
+      // enum like RideCategory.privatePool → "RideCategory.privatePool"
+      final s = rt.toString(); // e.g., "RideCategory.privatePool" or "0"
+      final last = s.contains('.') ? s.split('.').last : s;
+      final lower = last.toLowerCase();
+      if (lower == 'privatepool') return 'private_pool';
+      if (lower == 'commercialpool') return 'commercial_pool';
+      if (lower == 'commercialfullcar' || lower == 'fullcar' || lower == 'full') return 'commercial_full_car';
+
+      // int mapping 0/1/2
+      if (int.tryParse(last) != null) {
+        switch (int.parse(last)) {
+          case 2: return 'commercial_full_car';
+          case 1: return 'commercial_pool';
+          case 0:
+          default: return 'private_pool';
+        }
+      }
+      return 'private_pool';
+    }
+
+    final kind = _normalizeKind(rideType, category);
+
+    // derive commercial/pool from kind if not explicitly given
+    bool derivedCommercial;
+    String derivedPool;
+    switch (kind) {
+      case 'commercial_full_car':
+        derivedCommercial = true;  derivedPool = 'private'; break;
+      case 'commercial_pool':
+        derivedCommercial = true;  derivedPool = 'shared';  break;
+      case 'private_pool':
+      default:
+        derivedCommercial = false; derivedPool = 'shared';
+    }
+    final bool finalCommercial = isCommercial ?? derivedCommercial;
+    final String finalPool     = pool ?? derivedPool;
+
+    if (from.isEmpty || to.isEmpty || d.isEmpty || seatCount <= 0 || price < 0) {
+      throw ApiException(400, 'missing required fields');
+    }
+
+    final body = {
+      'from': from,
+      'to': to,
+      'depart_date': d,
+      if (t.isNotEmpty) 'depart_time': t,
+      'seats_total': seatCount,
+      'seats_available': seatCount,
+      'price_inr': price,
+      'is_commercial': finalCommercial,
+      'pool': finalPool,
+      'category': kind, // send normalized kind for server logging/debug
+    };
+
+    final res = await http.post(
+      Uri.parse('$baseUrl/rides'),
+      headers: await defaultHeaders(),
+      body: jsonEncode(body),
+    );
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final v = jsonDecode(res.body);
+      if (v is Map<String, dynamic>) return v;
+      throw ApiException(500, 'bad_payload');
+    }
+    throw ApiException(res.statusCode, res.body);
   }
 
+  // ------------------ BOOK ----------------------------------------------------
   Future<void> requestBooking(String rideId, int seats) async {
     final url = Uri.parse('$baseUrl/rides/$rideId/book');
     final res = await http.post(
       url,
-      headers: await _defaultHeaders(),
-      body: json.encode({'seats': seats}),
+      headers: await defaultHeaders(),
+      body: jsonEncode({'seats': seats}),
     );
-    if (res.statusCode != 200) {
-      throw Exception('API ${res.statusCode}: ${res.body}');
-    }
+    if (res.statusCode >= 200 && res.statusCode < 300) return;
+    throw ApiException(res.statusCode, res.body);
   }
 
-  Future<Map<String, dynamic>> publishRide({
-    required String fromLocation,
-    required String toLocation,
-    required String departDate, // yyyy-MM-dd
-    String? departTime,         // HH:mm or HH:mm:ss
-    required int seatsTotal,
-    required int pricePerSeatInr,
-    required String rideType, // private | shared | commercial_full
-  }) async {
-    final url = Uri.parse('$baseUrl/rides');
-    final body = {
-      'from_location': fromLocation,
-      'to_location': toLocation,
-      'depart_date': departDate,
-      if (departTime != null && departTime.isNotEmpty) 'depart_time': departTime,
-      'seats_total': seatsTotal,
-      'price_per_seat_inr': pricePerSeatInr,
-      'ride_type': rideType,
-    };
-
-    final res = await http.post(
-      url,
-      headers: await _defaultHeaders(),
-      body: json.encode(body),
-    );
-
-    if (res.statusCode != 201) {
-      throw Exception('API ${res.statusCode}: ${res.body}');
+  // ------------------ YOUR RIDES ---------------------------------------------
+  Future<List<dynamic>> myRides([String role = 'driver']) async {
+    final url = Uri.parse('$baseUrl/rides/mine').replace(queryParameters: {'role': role});
+    final res = await http.get(url, headers: await defaultHeaders());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final v = jsonDecode(res.body);
+      if (v is List) return v;
+      return <dynamic>[];
     }
-    return json.decode(res.body) as Map<String, dynamic>;
+    throw ApiException(res.statusCode, res.body);
   }
 
-  /// Returns { published: [], booked: [] }
-  Future<Map<String, dynamic>> myRides() async {
-    final url = Uri.parse('$baseUrl/rides/me/list');
-    final res = await http.get(url, headers: await _defaultHeaders());
-    if (res.statusCode != 200) {
-      throw Exception('API ${res.statusCode}: ${res.body}');
-    }
-    final decoded = json.decode(res.body);
-    if (decoded is Map<String, dynamic>) return decoded;
-    throw Exception('Unexpected response (expected object)');
-  }
-
-  // -------- Inbox (optional placeholder to avoid 404s) --------
-
+  // ------------------ INBOX (compat for your tab_inbox.dart) -----------------
+  /// If the backend doesn't have /rides/messages* yet, return [] so UI works.
   Future<List<dynamic>> inbox() async {
-    // If you don’t have messages yet, return empty for now
-    return <dynamic>[];
+    final url = Uri.parse('$baseUrl/rides/messages/inbox');
+    try {
+      final res = await http.get(url, headers: await defaultHeaders());
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final v = jsonDecode(res.body);
+        if (v is List) return v;
+        return <dynamic>[];
+      }
+      if (res.statusCode == 404) return <dynamic>[];
+      throw ApiException(res.statusCode, res.body);
+    } catch (_) {
+      return <dynamic>[];
+    }
+  }
+
+  /// Message thread for a specific ride + other user
+  Future<List<dynamic>> messages(String rideId, String otherUserId) async {
+    final url = Uri.parse('$baseUrl/rides/messages')
+        .replace(queryParameters: {'ride_id': rideId, 'other': otherUserId});
+    try {
+      final res = await http.get(url, headers: await defaultHeaders());
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final v = jsonDecode(res.body);
+        if (v is List) return v;
+        return <dynamic>[];
+      }
+      if (res.statusCode == 404) return <dynamic>[];
+      throw ApiException(res.statusCode, res.body);
+    } catch (_) {
+      return <dynamic>[];
+    }
+  }
+
+  Future<void> sendMessage(String rideId, String otherUserId, String text) async {
+    final url = Uri.parse('$baseUrl/rides/messages');
+    final body = {'ride_id': rideId, 'recipient_id': otherUserId, 'text': text};
+    try {
+      final res = await http.post(url, headers: await defaultHeaders(), body: jsonEncode(body));
+      if (res.statusCode >= 200 && res.statusCode < 300) return;
+      if (res.statusCode == 404) return;
+      throw ApiException(res.statusCode, res.body);
+    } catch (_) {
+      return;
+    }
   }
 }
