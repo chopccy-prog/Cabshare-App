@@ -8,7 +8,7 @@ class YourRidesScreen extends StatefulWidget {
 }
 
 class _YourRidesScreenState extends State<YourRidesScreen> {
-  final supabaseService = SupabaseService();
+  final SupabaseService supabaseService = SupabaseService();
   List<Ride> published = [], booked = [];
   bool isPublished = true;
 
@@ -19,9 +19,11 @@ class _YourRidesScreenState extends State<YourRidesScreen> {
   }
 
   Future<void> _refresh() async {
+    final pub = await supabaseService.getPublishedRides();
+    final book = await supabaseService.getBookedRides();
     setState(() {
-      published = supabaseService.getPublishedRides() as List<Ride>;
-      booked = supabaseService.getBookedRides() as List<Ride>;
+      published = pub;
+      booked = book;
     });
   }
 
@@ -39,17 +41,17 @@ class _YourRidesScreenState extends State<YourRidesScreen> {
           ),
           Expanded(
             child: rides.isEmpty
-                ? Center(child: Text(isPublished ? 'No rides published.' : 'No rides booked.'))
+                ? Center(child: Text(isPublished ? 'No rides published.' : 'No rides booked. Please log in.'))
                 : ListView.builder(
               itemCount: rides.length,
               itemBuilder: (context, index) {
                 final ride = rides[index];
                 return ListTile(
-                  title: Text('${ride.fromCity} to ${ride.toCity}'),
-                  subtitle: Text('Date: ${ride.departDate} | Status: ${ride.status}'),
+                  title: Text('${ride.fromCity ?? 'Unknown'} to ${ride.toCity ?? 'Unknown'}'),
+                  subtitle: Text('Date: ${ride.departDate ?? DateTime.now()} | Status: ${ride.status}'),
                   trailing: ElevatedButton(
                     onPressed: () {
-                      // Add cancellation logic later
+                      // Cancellation logic to add later
                     },
                     child: Text('Cancel'),
                   ),

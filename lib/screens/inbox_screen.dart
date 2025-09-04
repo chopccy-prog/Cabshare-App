@@ -7,7 +7,7 @@ class InboxScreen extends StatefulWidget {
 }
 
 class _InboxScreenState extends State<InboxScreen> {
-  final supabaseService = SupabaseService();
+  final SupabaseService supabaseService = SupabaseService();
   List<Map<String, dynamic>> messages = [];
 
   @override
@@ -26,14 +26,14 @@ class _InboxScreenState extends State<InboxScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('Inbox')),
       body: messages.isEmpty
-          ? Center(child: Text('No messages yet.'))
+          ? Center(child: Text('No messages yet. Please log in or book a ride.'))
           : ListView.builder(
         itemCount: messages.length,
         itemBuilder: (context, index) {
           final msg = messages[index];
           return ListTile(
             title: Text(msg['text'] ?? 'No text'),
-            subtitle: Text('From: ${msg['sender_id']} at ${msg['ts']}'),
+            subtitle: Text('From: ${msg['sender_id'] ?? 'Unknown'} at ${msg['ts'] ?? ''}'),
           );
         },
       ),
