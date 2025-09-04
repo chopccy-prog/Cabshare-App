@@ -5,7 +5,7 @@ import '../models/ride.dart';
 import '../models/pool_type.dart';
 
 class ApiClient {
-  final String baseUrl; // e.g. http://192.168.1.35:5000
+  final String baseUrl; // e.g. http://192.168.1.3:5000
 
   ApiClient({required this.baseUrl});
 

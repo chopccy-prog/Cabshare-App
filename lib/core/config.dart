@@ -4,7 +4,7 @@ class ConfigService {
   static const String _kBaseUrlKey = 'base_url';
 
   // <-- UPDATE THIS WHEN YOUR LAN IP CHANGES
-  static const String defaultBaseUrl = 'http://192.168.1.35:5000';
+  static const String defaultBaseUrl = 'http://192.168.1.3:5000';
 
   Future<String> getBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
