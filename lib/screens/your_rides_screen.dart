@@ -11,6 +11,7 @@ class _YourRidesScreenState extends State<YourRidesScreen> {
   final SupabaseService supabaseService = SupabaseService();
   List<Ride> published = [], booked = [];
   bool isPublished = true;
+  bool isLoading = true;
 
   @override
   void initState() {
@@ -19,12 +20,19 @@ class _YourRidesScreenState extends State<YourRidesScreen> {
   }
 
   Future<void> _refresh() async {
-    final pub = await supabaseService.getPublishedRides();
-    final book = await supabaseService.getBookedRides();
-    setState(() {
-      published = pub;
-      booked = book;
-    });
+    setState(() => isLoading = true);
+    try {
+      final pub = await supabaseService.getPublishedRides();
+      final book = await supabaseService.getBookedRides();
+      setState(() {
+        published = pub;
+        booked = book;
+        isLoading = false;
+      });
+    } catch (e) {
+      print('Rides load error: $e');
+      setState(() => isLoading = false);
+    }
   }
 
   @override
@@ -32,7 +40,9 @@ class _YourRidesScreenState extends State<YourRidesScreen> {
     final rides = isPublished ? published : booked;
     return Scaffold(
       appBar: AppBar(title: Text('Your Rides')),
-      body: Column(
+      body: isLoading
+          ? Center(child: CircularProgressIndicator())
+          : Column(
         children: [
           ToggleButtons(
             children: [Text('Published'), Text('Booked')],

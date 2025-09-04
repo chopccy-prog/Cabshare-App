@@ -1,35 +1,35 @@
-// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'env.dart';
-import 'screens/login_page.dart';
-import 'screens/home_shell.dart';
+import 'screens/login_screen.dart';
+import 'screens/profile_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
-    url: const String.fromEnvironment('SUPABASE_URL'),
-    anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
-    debug: true,
+    url: 'https://lrzcnoaqooldywflixkb.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxyemNub2Fxb29sZHl3ZmxpeGtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxMTAzMTAsImV4cCI6MjA3MDY4NjMxMH0.82PG2QFVL4lMrqE8E9Es3bJSQZOTpFRo9JXO8TQmxPE',
   );
-  runApp(const CabshareApp());
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    print(details.toString());
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    print('Platform error: $error\n$stack');
+    return true;
+  };
+  runApp(MyApp());
 }
 
-class CabshareApp extends StatelessWidget {
-  const CabshareApp({super.key});
-
+class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Cabshare',
-      theme: ThemeData(useMaterial3: true),
-      home: Builder(
-        builder: (context) {
-          final session = Supabase.instance.client.auth.currentSession;
-          if (session == null) return const LoginPage();
-          return const HomeShell();
-        },
-      ),
+      initialRoute: Supabase.instance.client.auth.currentUser == null ? '/login' : '/profile',
+      routes: {
+        '/login': (context) => LoginScreen(),
+        '/profile': (context) => ProfileScreen(),
+        // Add other routes (e.g., '/home' for bottom nav)
+      },
     );
   }
 }
