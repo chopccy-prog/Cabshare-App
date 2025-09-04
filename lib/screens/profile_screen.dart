@@ -1,30 +1,16 @@
 import 'package:flutter/material.dart';
-import '../services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-class ProfileScreen extends StatefulWidget {
-  @override
-  _ProfileScreenState createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  final SupabaseService supabaseService = SupabaseService();
-  String? email;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUser();
-  }
-
-  Future<void> _loadUser() async {
-    final user = supabaseService.supabase.auth.currentUser;
-    setState(() => email = user?.email);
-  }
-
-  Future<void> _signOut() async {
-    await supabaseService.signOut();
-    setState(() => email = null);
-    // Navigate to login or home (add navigation logic)
+class ProfileScreen extends StatelessWidget {
+  Future<void> _signOut(BuildContext context) async {
+    try {
+      await Supabase.instance.client.auth.signOut();
+      Navigator.pushReplacementNamed(context, '/login');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error signing out: $e')),
+      );
+    }
   }
 
   @override
@@ -35,10 +21,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Signed in as: ${email ?? 'Not logged in'}'),
+            Text('Logged in as: ${Supabase.instance.client.auth.currentUser?.email ?? 'Unknown'}'),
             ElevatedButton(
-              onPressed: email == null ? null : _signOut,
-              child: Text(email == null ? 'Log In' : 'Sign Out'),
+              onPressed: () => Navigator.pushNamed(context, '/inbox'),
+              child: Text('Go to Inbox'),
+            ),
+            ElevatedButton(
+              onPressed: () => _signOut(context),
+              child: Text('Sign Out'),
             ),
           ],
         ),

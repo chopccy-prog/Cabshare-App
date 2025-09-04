@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/login_screen.dart';
-import 'screens/profile_screen.dart';
+import 'screens/home_screen.dart';  // New home with bottom nav
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,14 +12,30 @@ void main() async {
   runApp(MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
+  @override
+  _MyAppState createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      print('Auth state changed: ${data.event}');
+      if (data.event == 'SIGNED_OUT') {
+        setState(() {});
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      initialRoute: Supabase.instance.client.auth.currentUser == null ? '/login' : '/profile',
+      initialRoute: Supabase.instance.client.auth.currentUser == null ? '/login' : '/home',
       routes: {
         '/login': (context) => LoginScreen(),
-        '/profile': (context) => ProfileScreen(),
+        '/home': (context) => HomeScreen(),
       },
     );
   }
