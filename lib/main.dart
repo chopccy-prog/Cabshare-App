@@ -1,42 +1,71 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';  // New home with bottom nav
+import 'screens/search_screen.dart';
+import 'screens/publish_ride_screen.dart';
+import 'screens/your_rides_screen.dart';
+import 'screens/inbox_screen.dart';
+import 'screens/profile_screen.dart'; // Assume this exists; if not, create a simple one with Text('Profile')
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
-    url: 'https://lrzcnoaqooldywflixkb.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxyemNub2Fxb29sZHl3ZmxpeGtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUxMTAzMTAsImV4cCI6MjA3MDY4NjMxMH0.82PG2QFVL4lMrqE8E9Es3bJSQZOTpFRo9JXO8TQmxPE',
+    url: 'YOUR_SUPABASE_URL', // Replace with your Supabase project URL
+    anonKey: 'YOUR_ANON_KEY', // Replace with your Supabase anon key
   );
   runApp(MyApp());
 }
 
-class MyApp extends StatefulWidget {
-  @override
-  _MyAppState createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  @override
-  void initState() {
-    super.initState();
-    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
-      print('Auth state changed: ${data.event}');
-      if (data.event == 'SIGNED_OUT') {
-        setState(() {});
-      }
-    });
-  }
-
+class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      initialRoute: Supabase.instance.client.auth.currentUser == null ? '/login' : '/home',
-      routes: {
-        '/login': (context) => LoginScreen(),
-        '/home': (context) => HomeScreen(),
-      },
+      title: 'Cabshare',
+      theme: ThemeData(
+        primarySwatch: Colors.purple,
+        scaffoldBackgroundColor: Colors.pink[50],
+      ),
+      home: HomeScreen(),
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
+  @override
+  _HomeScreenState createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int _currentIndex = 0;
+
+  final List<Widget> _pages = [
+    SearchScreen(),
+    PublishRideScreen(),
+    YourRidesScreen(),
+    InboxScreen(),
+    ProfileScreen(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _pages[_currentIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        items: [
+          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
+          BottomNavigationBarItem(icon: Icon(Icons.add_circle), label: 'Publish'),
+          BottomNavigationBarItem(icon: Icon(Icons.directions_car), label: 'Your Rides'),
+          BottomNavigationBarItem(icon: Icon(Icons.mail), label: 'Inbox'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+        ],
+        selectedItemColor: Colors.purple,
+        unselectedItemColor: Colors.grey,
+      ),
     );
   }
 }

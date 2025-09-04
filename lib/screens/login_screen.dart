@@ -1,66 +1,56 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class LoginScreen extends StatefulWidget {
+class InboxScreen extends StatefulWidget {
   @override
-  _LoginScreenState createState() => _LoginScreenState();
+  _InboxScreenState createState() => _InboxScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  String? _errorMessage;
+class _InboxScreenState extends State<InboxScreen> {
+  final supabase = Supabase.instance.client;
+  final String testUserId = '00000000-0000-0000-0000-000000000000'; // Replace with your test user's UUID
 
-  Future<void> _login() async {
-    setState(() => _errorMessage = null);
+  List<dynamic> messages = [];
+  bool isLoading = true;
+  String errorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMessages();
+  }
+
+  Future<void> _fetchMessages() async {
     try {
-      final response = await Supabase.instance.client.auth.signInWithPassword(
-        email: _emailController.text,
-        password: _passwordController.text,
-      );
-      if (response.user != null) {
-        Navigator.pushReplacementNamed(context, '/profile');
-      }
+      final response = await supabase
+          .from('messages') // Assume table name; adjust per schema
+          .select('*')
+          .or('sender_id.eq.$testUserId,receiver_id.eq.$testUserId'); // Fixed: Use UUID instead of 'Inbox'
+
+      setState(() {
+        messages = response;
+        isLoading = false;
+      });
     } catch (e) {
-      setState(() => _errorMessage = e.toString());
-    }
+      setState() {
+        errorMessage = e.toString();
+        isLoading = false;
+      });
+  }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Login')),
-      body: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _emailController,
-              decoration: InputDecoration(labelText: 'Email'),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            TextField(
-              controller: _passwordController,
-              decoration: InputDecoration(labelText: 'Password'),
-              obscureText: true,
-            ),
-            if (_errorMessage != null) Text(_errorMessage!, style: TextStyle(color: Colors.red)),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _login,
-              child: Text('Login'),
-            ),
-          ],
-        ),
+      appBar: AppBar(title: Text('Cabshare')),
+      body: Column(
+        children: [
+          if (errorMessage.isNotEmpty) Text(errorMessage, style: TextStyle(color: Colors.red)),
+          if (isLoading) Center(child: CircularProgressIndicator()),
+          if (!isLoading && messages.isEmpty) Center(child: Text('No messages yet.')),
+          // Add ListView.builder to display messages
+        ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
   }
 }

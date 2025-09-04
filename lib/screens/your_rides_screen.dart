@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/supabase_service.dart';
-import '../models/ride.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class YourRidesScreen extends StatefulWidget {
   @override
@@ -8,68 +7,65 @@ class YourRidesScreen extends StatefulWidget {
 }
 
 class _YourRidesScreenState extends State<YourRidesScreen> {
-  final SupabaseService supabaseService = SupabaseService();
-  List<Ride> published = [], booked = [];
-  bool isPublished = true;
+  final supabase = Supabase.instance.client;
+  final String testUserId = '00000000-0000-0000-0000-000000000000'; // Replace with your test user's UUID from Supabase dashboard
+
+  List<dynamic> publishedRides = [];
+  List<dynamic> bookedRides = [];
   bool isLoading = true;
+  String errorMessage = '';
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _fetchRides();
   }
 
-  Future<void> _refresh() async {
-    setState(() => isLoading = true);
+  Future<void> _fetchRides() async {
     try {
-      final pub = await supabaseService.getPublishedRides();
-      final book = await supabaseService.getBookedRides();
+      // For Published (rides you published as driver)
+      final publishedResponse = await supabase
+          .from('rides')
+          .select('*')
+          .eq('driver_id', testUserId); // Fixed: Use UUID instead of 'mine'
+
+      // For Booked (assume a 'bookings' table; adjust if your schema is different)
+      final bookedResponse = await supabase
+          .from('bookings')
+          .select('*, rides(*)') // Join with rides if needed
+          .eq('rider_id', testUserId); // Fixed: Use UUID instead of 'mine'
+
       setState(() {
-        published = pub;
-        booked = book;
+        publishedRides = publishedResponse;
+        bookedRides = bookedResponse;
         isLoading = false;
       });
     } catch (e) {
-      print('Rides load error: $e');
-      setState(() => isLoading = false);
+      setState(() {
+        errorMessage = e.toString();
+        isLoading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final rides = isPublished ? published : booked;
     return Scaffold(
-      appBar: AppBar(title: Text('Your Rides')),
-      body: isLoading
-          ? Center(child: CircularProgressIndicator())
-          : Column(
+      appBar: AppBar(title: Text('Cabshare')),
+      body: Column(
         children: [
           ToggleButtons(
             children: [Text('Published'), Text('Booked')],
-            isSelected: [isPublished, !isPublished],
-            onPressed: (index) => setState(() => isPublished = index == 0),
+            isSelected: [true, false], // Add state for toggling if needed
+            onPressed: (index) {
+              // Add logic to switch tabs
+            },
           ),
-          Expanded(
-            child: rides.isEmpty
-                ? Center(child: Text(isPublished ? 'No rides published.' : 'No rides booked. Please log in.'))
-                : ListView.builder(
-              itemCount: rides.length,
-              itemBuilder: (context, index) {
-                final ride = rides[index];
-                return ListTile(
-                  title: Text('${ride.fromCity ?? 'Unknown'} to ${ride.toCity ?? 'Unknown'}'),
-                  subtitle: Text('Date: ${ride.departDate ?? DateTime.now()} | Status: ${ride.status}'),
-                  trailing: ElevatedButton(
-                    onPressed: () {
-                      // Cancellation logic to add later
-                    },
-                    child: Text('Cancel'),
-                  ),
-                );
-              },
-            ),
-          ),
-          ElevatedButton(onPressed: _refresh, child: Text('Refresh')),
+          if (errorMessage.isNotEmpty) Text(errorMessage, style: TextStyle(color: Colors.red)),
+          if (isLoading) Center(child: CircularProgressIndicator()),
+          if (!isLoading && publishedRides.isEmpty) Center(child: Text('No rides you published yet.')),
+          // Add ListView for rides here (e.g., ListView.builder to display rides)
+          ElevatedButton(onPressed: _fetchRides, child: Text('Refresh')),
         ],
       ),
     );
