@@ -103,7 +103,7 @@ class ApiClient {
     final uri = Uri.parse('$baseUrl/bookings').replace(queryParameters: qp.isEmpty ? null : qp);
     final body = <String, dynamic>{
       'ride_id': rideId,
-      'seats_requested': seats, // note: use seats_requested to match DB
+      'seats_requested': seats, // use seats_requested to match DB
     };
     if (pickupStopId != null) body['pickup_stop_id'] = pickupStopId;
     if (dropStopId != null) body['drop_stop_id'] = dropStopId;
