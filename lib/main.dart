@@ -1,12 +1,4 @@
 // lib/main.dart
-//
-// Revised entry point for the Work Setu‑Cab Share Flutter app.
-//
-// This version initializes Supabase, creates a single [ApiClient]
-// instance with the API base URL from `--dart-define=API_BASE`, and
-// listens for authentication state changes to update the bearer token.
-// It passes the client into [HomeShell] so that all screens share the
-// same API instance and credentials.
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -37,16 +29,16 @@ class _CabshareAppState extends State<CabshareApp> {
   @override
   void initState() {
     super.initState();
-    // Instantiate the API client with the base URL from dart-define.
+    // Initialize the ApiClient once
     _apiClient =
         ApiClient(baseUrl: const String.fromEnvironment('API_BASE'));
-    // Set initial session/token if already signed in.
+    // Grab any existing session and set its token
     _session = Supabase.instance.client.auth.currentSession;
     final token = _session?.accessToken;
     if (token != null && token.isNotEmpty) {
       _apiClient.setAuthToken(token);
     }
-    // Listen for auth state changes and update API token accordingly.
+    // Update token when auth state changes
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       final session = data.session;
       setState(() {
@@ -62,7 +54,7 @@ class _CabshareAppState extends State<CabshareApp> {
       title: 'Cabshare',
       theme: ThemeData(useMaterial3: true),
       home: _session == null
-          ? const LoginPage()
+          ? LoginPage(api: _apiClient)             // <-- pass the ApiClient here
           : HomeShell(api: _apiClient),
     );
   }

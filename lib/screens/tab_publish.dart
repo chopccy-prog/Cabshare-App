@@ -1,5 +1,15 @@
 // lib/screens/tab_publish.dart
+//
+// This widget allows a driver to publish a new ride.  It collects the
+// origin, destination, date, time, number of seats, price per seat and
+// ride type.  Once the user taps "Publish" the form values are sent to
+// the backend via the ApiClient.  The backend requires the `ride_type`
+// to be one of `private_pool`, `commercial_pool` or `commercial_full`,
+// which correspond to the three ride options offered by the app.
+
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../services/api_client.dart';
 
 class TabPublish extends StatefulWidget {
@@ -18,7 +28,10 @@ class _TabPublishState extends State<TabPublish> {
   final _seats = TextEditingController(text: '1');
   final _price = TextEditingController(text: '0');
 
-  String _rideType = 'private'; // private | shared | commercial_full
+  // The ride type must match the enum defined in the database.  See
+  // schema.sql for `rides_ride_type_check`: values are
+  // "private_pool", "commercial_pool" and "commercial_full".
+  String _rideType = 'private_pool';
   bool _busy = false;
   String? _err;
 
@@ -66,13 +79,15 @@ class _TabPublishState extends State<TabPublish> {
       _err = null;
     });
     try {
-      if (_date.text.isEmpty) {
-        throw Exception('missing required fields: depart_date');
+      if (_from.text.trim().isEmpty ||
+          _to.text.trim().isEmpty ||
+          _date.text.trim().isEmpty) {
+        throw Exception('Missing required fields');
       }
       final seats = int.tryParse(_seats.text) ?? 1;
       final price = int.tryParse(_price.text) ?? 0;
 
-      // Combine date and time if both are provided; otherwise use date only.
+      // Combine date and time.  If no time is provided, use date only.
       final departAt = _time.text.isNotEmpty
           ? '${_date.text.trim()} ${_time.text.trim()}'
           : _date.text.trim();
@@ -90,14 +105,14 @@ class _TabPublishState extends State<TabPublish> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ride published')),
       );
-
-      // Clear form fields for the next entry
+      // Reset form fields for the next entry
       _from.clear();
       _to.clear();
       _date.clear();
       _time.clear();
       _seats.text = '1';
       _price.text = '0';
+      setState(() => _rideType = 'private_pool');
     } catch (e) {
       setState(() => _err = e.toString());
     } finally {
@@ -177,15 +192,16 @@ class _TabPublishState extends State<TabPublish> {
           ],
         ),
         const SizedBox(height: 16),
+        // Ride type selector using allowed values
         SegmentedButton<String>(
           segments: const [
             ButtonSegment(
-              value: 'private',
+              value: 'private_pool',
               icon: Icon(Icons.directions_car),
               label: Text('Private Pool'),
             ),
             ButtonSegment(
-              value: 'shared',
+              value: 'commercial_pool',
               icon: Icon(Icons.local_taxi),
               label: Text('Commercial Pool'),
             ),

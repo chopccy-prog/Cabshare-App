@@ -1,5 +1,14 @@
 // lib/screens/tab_my_rides.dart
+//
+// Displays rides created by the current user (driver role) and rides they
+// have booked (rider role).  Uses the ApiClient to fetch rides and
+// passes the current user's UID as a query parameter so the backend
+// can properly filter and authorize requests.  The UI toggles
+// between "Published" and "Booked" via a SegmentedButton.
+
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../services/api_client.dart';
 
 class TabMyRides extends StatefulWidget {
@@ -11,81 +20,90 @@ class TabMyRides extends StatefulWidget {
 }
 
 class _TabMyRidesState extends State<TabMyRides> {
-  int _which = 0; // 0=Published (driver), 1=Booked (rider)
-  bool _busy = false;
-  String? _err;
-  List<dynamic> _driver = [];
-  List<dynamic> _rider = [];
+  bool _showPublished = true;
+  bool _loading = true;
+  String? _error;
+  List<dynamic> _published = [];
+  List<dynamic> _booked = [];
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _refreshRides();
   }
 
-  Future<void> _refresh() async {
-    setState(() { _busy = true; _err = null; });
+  Future<void> _refreshRides() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final d = await widget.api.myRides(role: 'driver');
-      final r = await widget.api.myRides(role: 'rider');
-      setState(() { _driver = d; _rider = r; });
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      final published = await widget.api.myRides(role: 'driver', uid: userId);
+      final booked = await widget.api.myRides(role: 'rider', uid: userId);
+      setState(() {
+        _published = published;
+        _booked = booked;
+      });
     } catch (e) {
-      setState(() { _err = e.toString(); });
+      setState(() => _error = e.toString());
     } finally {
-      setState(() { _busy = false; });
+      setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final items = _which == 0 ? _driver : _rider;
-
+    final rides = _showPublished ? _published : _booked;
     return Column(
       children: [
-        const SizedBox(height: 8),
-        SegmentedButton<int>(
+        const SizedBox(height: 12),
+        SegmentedButton<bool>(
           segments: const [
-            ButtonSegment(value: 0, label: Text('Published')),
-            ButtonSegment(value: 1, label: Text('Booked')),
+            ButtonSegment(value: true, label: Text('Published')),
+            ButtonSegment(value: false, label: Text('Booked')),
           ],
-          selected: {_which},
-          onSelectionChanged: (s) => setState(() => _which = s.first),
+          selected: {_showPublished},
+          onSelectionChanged: (s) => setState(() => _showPublished = s.first),
         ),
-        const SizedBox(height: 8),
-        if (_err != null) Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(_err!, style: const TextStyle(color: Colors.red))),
         Expanded(
-          child: RefreshIndicator(
-            onRefresh: _refresh,
-            child: _busy
-                ? const Center(child: CircularProgressIndicator())
-                : items.isEmpty
-                ? Center(child: Text(_which == 0 ? 'No rides you published yet.' : 'No rides you booked yet.'))
-                : ListView.separated(
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (_, i) {
-                final m = items[i] as Map<String, dynamic>;
-                final from = (m['from'] ?? m['from_city'] ?? '').toString();
-                final to   = (m['to']   ?? m['to_city']   ?? '').toString();
-                final when = (m['when'] ?? m['start_time'] ?? '').toString();
-                final seats = (m['seats'] ?? m['available_seats'] ?? '').toString();
-                final pool  = (m['pool'] ?? '').toString();
-                final commercial = (m['is_commercial'] == true || m['is_commercial'] == 1 || m['is_commercial'] == 'true');
-                final price = (m['price_inr'] ?? m['price'] ?? '').toString();
-
-                return ListTile(
-                  leading: Icon(_which == 0 ? Icons.drive_eta : Icons.event_seat),
-                  title: Text('$from → $to'),
-                  subtitle: Text('When: $when • Seats: $seats • ₹$price • ${commercial ? "Commercial" : "Personal"} • ${pool.isEmpty ? "private?" : pool}'),
-                );
-              },
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? Center(
+            child: Text(
+              _error!,
+              style: const TextStyle(color: Colors.red),
             ),
+          )
+              : rides.isEmpty
+              ? const Center(child: Text('No rides found'))
+              : ListView.separated(
+            itemCount: rides.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final ride = rides[index] as Map<String, dynamic>;
+              final fromCity = ride['from_location'] ?? ride['from'];
+              final toCity = ride['to_location'] ?? ride['to'];
+              final date = ride['depart_date'] ?? '';
+              final time = ride['depart_time'] ?? '';
+              final seats = ride['seats_total'] ?? ride['seats'] ?? '';
+              return ListTile(
+                title: Text('$fromCity → $toCity'),
+                subtitle: Text('$date $time | Seats: $seats'),
+                onTap: () {
+                  // TODO: navigate to ride details or chat
+                },
+              );
+            },
           ),
         ),
-        const SizedBox(height: 8),
         Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: FilledButton.icon(onPressed: _refresh, icon: const Icon(Icons.refresh), label: const Text('Refresh')),
+          padding: const EdgeInsets.all(16),
+          child: ElevatedButton(
+            onPressed: _refreshRides,
+            child: const Text('Refresh'),
+          ),
         ),
       ],
     );
