@@ -26,8 +26,8 @@ class _TabMyRidesState extends State<TabMyRides> {
   Future<void> _refresh() async {
     setState(() { _busy = true; _err = null; });
     try {
-      final d = await widget.api.myRides('driver');
-      final r = await widget.api.myRides('rider');
+      final d = await widget.api.myRides(role: 'driver');
+      final r = await widget.api.myRides(role: 'rider');
       setState(() { _driver = d; _rider = r; });
     } catch (e) {
       setState(() { _err = e.toString(); });

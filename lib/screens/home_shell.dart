@@ -16,7 +16,9 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _idx = 0;
-  final _api = ApiClient();
+  static const String backendUrl =
+      String.fromEnvironment('API_BASE', defaultValue: 'http://192.168.1.3:3000');
+  final ApiClient _api = ApiClient(baseUrl: backendUrl);
 
   @override
   Widget build(BuildContext context) {

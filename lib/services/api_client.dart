@@ -125,4 +125,41 @@ class ApiClient {
     final data = jsonDecode(resp.body);
     return (data is List) ? data : <dynamic>[];
   }
+
+  // ----------------- Messages: list conversation -----------------
+  /// Get all messages exchanged with another user on a specific ride.
+  /// Requires both `rideId` and the `otherUserId`.
+  Future<List<dynamic>> messages(String rideId, String otherUserId) async {
+    final uri = Uri.parse('$baseUrl/messages').replace(queryParameters: {
+      'ride_id': rideId,
+      'other_user_id': otherUserId,
+    });
+    final resp = await _http.get(uri, headers: defaultHeaders);
+    if (resp.statusCode >= 400) {
+      throw Exception('API ${resp.statusCode}: ${resp.body}');
+    }
+    final data = jsonDecode(resp.body);
+    return (data is List) ? data : <dynamic>[];
+  }
+
+  // ----------------- Messages: send a new message -----------------
+  /// Send a message to another user on a ride.
+  /// `recipientId` is the ID of the person you’re chatting with.
+  Future<Map<String, dynamic>> sendMessage(
+      String rideId, String recipientId, String text) async {
+    final resp = await _http.post(
+      Uri.parse('$baseUrl/messages'),
+      headers: defaultHeaders,
+      body: jsonEncode({
+        'ride_id': rideId,
+        'recipient_id': recipientId,
+        'body': text,
+      }),
+    );
+    if (resp.statusCode >= 400) {
+      throw Exception('API ${resp.statusCode}: ${resp.body}');
+    }
+    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
 }
