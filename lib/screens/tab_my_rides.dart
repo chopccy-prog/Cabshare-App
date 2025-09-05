@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/api_client.dart';
+import 'ride_detail.dart';
 
 class TabMyRides extends StatefulWidget {
   final ApiClient api;
@@ -88,11 +89,18 @@ class _TabMyRidesState extends State<TabMyRides> {
               final date = ride['depart_date'] ?? '';
               final time = ride['depart_time'] ?? '';
               final seats = ride['seats_total'] ?? ride['seats'] ?? '';
+              final status = ride['status'] ?? '';
               return ListTile(
                 title: Text('$fromCity → $toCity'),
-                subtitle: Text('$date $time | Seats: $seats'),
+                subtitle: Text('$date $time | $status | Seats: $seats'),
                 onTap: () {
-                  // TODO: navigate to ride details or chat
+                  // Navigate to ride detail for published or booked ride
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => RideDetail(
+                      api: widget.api,
+                      ride: ride as Map<String, dynamic>,
+                    ),
+                  ));
                 },
               );
             },

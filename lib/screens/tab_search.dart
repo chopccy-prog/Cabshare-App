@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../services/api_client.dart';
+import 'ride_detail.dart';
 
 class TabSearch extends StatefulWidget {
   final ApiClient api;
@@ -163,7 +164,10 @@ class _TabSearchState extends State<TabSearch> {
                   title: Text('$fromCity → $toCity'),
                   subtitle: Text('$date $time | ₹$price | Seats: $seats'),
                   onTap: () {
-                    // TODO: show ride details or booking page
+                    // Navigate to RideDetail screen with the selected ride
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => RideDetail(api: widget.api, ride: ride),
+                    ));
                   },
                 );
               },
