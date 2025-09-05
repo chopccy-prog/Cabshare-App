@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/api_client.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RideDetail extends StatefulWidget {
   final ApiClient api;
@@ -81,8 +82,13 @@ class _RideDetailState extends State<RideDetail> {
                   _success = null;
                 });
                 try {
-                  final booking = await widget.api
-                      .requestBooking(ride['id'] as String, _seatsToBook);
+                  // Pass uid query parameter as fallback when bearer token is absent
+                  final user = Supabase.instance.client.auth.currentUser;
+                  final booking = await widget.api.requestBooking(
+                    ride['id'] as String,
+                    _seatsToBook,
+                    uid: user?.id,
+                  );
                   setState(() => _success =
                   'Booking ${booking['status']} (${booking['seats']} seat${booking['seats'] == 1 ? '' : 's'})');
                 } catch (e) {

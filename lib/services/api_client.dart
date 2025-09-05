@@ -118,9 +118,13 @@ class ApiClient {
 
   // -----------------------------------------------------------------
   // Bookings: Request booking
-  Future<Map<String, dynamic>> requestBooking(String rideId, int seats) async {
+  Future<Map<String, dynamic>> requestBooking(String rideId, int seats,
+      {String? uid}) async {
+    // Optionally pass uid as a query parameter when bearer auth is not available.
+    final uri = Uri.parse('$baseUrl/bookings')
+        .replace(queryParameters: uid != null && uid.isNotEmpty ? {'uid': uid} : null);
     final resp = await _http.post(
-      Uri.parse('$baseUrl/bookings'),
+      uri,
       headers: defaultHeaders,
       body: jsonEncode({'ride_id': rideId, 'seats': seats}),
     );
