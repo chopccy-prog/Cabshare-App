@@ -78,7 +78,9 @@ class ApiClient {
     required String departAt,
     required int seats,
     required int pricePerSeatInr,
-    String rideType = 'private',
+    // Default to "private_pool" which is a valid value per the
+    // rides_ride_type_check constraint in the database.
+    String rideType = 'private_pool',
     String? carPlate,
     String? carModel,
   }) async {
