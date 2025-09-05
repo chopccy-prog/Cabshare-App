@@ -35,7 +35,7 @@ class _HomeShellState extends State<HomeShell> {
           TabPublish(api: api),
           TabMyRides(api: api),
           TabInbox(api: api),
-          const TabProfile(),
+          TabProfile(api: api),
         ],
       ),
       bottomNavigationBar: NavigationBar(

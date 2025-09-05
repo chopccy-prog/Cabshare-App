@@ -103,7 +103,7 @@ class ApiClient {
     final uri = Uri.parse('$baseUrl/bookings').replace(queryParameters: qp.isEmpty ? null : qp);
     final body = <String, dynamic>{
       'ride_id': rideId,
-      'seats_requested': seats,
+      'seats_requested': seats, // note: use seats_requested to match DB
     };
     if (pickupStopId != null) body['pickup_stop_id'] = pickupStopId;
     if (dropStopId != null) body['drop_stop_id'] = dropStopId;
@@ -167,6 +167,32 @@ class ApiClient {
     }
     final data = jsonDecode(resp.body);
     return (data is List) ? data : <dynamic>[];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Profiles: get current user profile
+  Future<Map<String, dynamic>> getProfile({String? uid}) async {
+    final qp = <String, String>{};
+    if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
+    final uri = Uri.parse('$baseUrl/profiles/me').replace(queryParameters: qp.isEmpty ? null : qp);
+    final resp = await _http.get(uri, headers: defaultHeaders);
+    if (resp.statusCode >= 400) {
+      throw Exception('API ${resp.statusCode}: ${resp.body}');
+    }
+    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Profiles: update current user profile
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> fields, {String? uid}) async {
+    final qp = <String, String>{};
+    if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
+    final uri = Uri.parse('$baseUrl/profiles/me').replace(queryParameters: qp.isEmpty ? null : qp);
+    final resp = await _http.put(uri, headers: defaultHeaders, body: jsonEncode(fields));
+    if (resp.statusCode >= 400) {
+      throw Exception('API ${resp.statusCode}: ${resp.body}');
+    }
+    return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
   // ---------------------------------------------------------------------------
