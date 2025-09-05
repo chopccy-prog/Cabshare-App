@@ -1,10 +1,18 @@
 // lib/screens/login_page.dart
+//
+// Updated login page that accepts an [ApiClient] and uses it when
+// navigating to the home screen after a successful sign‑in.  This
+// ensures the same API client (with its bearer token) is reused
+// throughout the app.
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../screens/home_shell.dart';
+import '../services/api_client.dart';
+import 'home_shell.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  final ApiClient api;
+  const LoginPage({super.key, required this.api});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -17,7 +25,10 @@ class _LoginPageState extends State<LoginPage> {
   String? _err;
 
   Future<void> _signIn() async {
-    setState(() { _busy = true; _err = null; });
+    setState(() {
+      _busy = true;
+      _err = null;
+    });
     try {
       final res = await Supabase.instance.client.auth.signInWithPassword(
         email: _email.text.trim(),
@@ -25,12 +36,18 @@ class _LoginPageState extends State<LoginPage> {
       );
       if (!mounted) return;
       if (res.session != null) {
-        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeShell()));
+        // Update the API client's auth token when sign‑in succeeds.
+        final token = res.session!.accessToken;
+        widget.api.setAuthToken(token);
+        // Navigate to HomeShell with the same ApiClient.
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => HomeShell(api: widget.api)),
+        );
       }
     } catch (e) {
-      setState(() { _err = e.toString(); });
+      setState(() => _err = e.toString());
     } finally {
-      if (mounted) setState(() { _busy = false; });
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -45,17 +62,29 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Cabshare Login', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Cabshare Login',
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 16),
-                TextField(controller: _email, decoration: const InputDecoration(labelText: 'Email')),
+                TextField(
+                  controller: _email,
+                  decoration: const InputDecoration(labelText: 'Email'),
+                ),
                 const SizedBox(height: 8),
-                TextField(controller: _password, decoration: const InputDecoration(labelText: 'Password'), obscureText: true),
+                TextField(
+                  controller: _password,
+                  decoration: const InputDecoration(labelText: 'Password'),
+                  obscureText: true,
+                ),
                 const SizedBox(height: 12),
-                if (_err != null) Text(_err!, style: const TextStyle(color: Colors.red)),
+                if (_err != null)
+                  Text(_err!, style: const TextStyle(color: Colors.red)),
                 const SizedBox(height: 12),
                 FilledButton(
                   onPressed: _busy ? null : _signIn,
-                  child: _busy ? const CircularProgressIndicator() : const Text('Sign In'),
+                  child:
+                  _busy ? const CircularProgressIndicator() : const Text('Sign In'),
                 ),
               ],
             ),
