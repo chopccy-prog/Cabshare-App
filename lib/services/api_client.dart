@@ -1,37 +1,30 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-/// Lightweight HTTP client for the Work Setu‑Cab Share Flutter app.
+/// A lightweight HTTP client for the Work Setu‑Cab Share Flutter app.
 ///
-/// This client provides methods that mirror the backend routes.  It
-/// centralizes default headers (including an optional Supabase
-/// authentication token) and converts between camelCase parameters
-/// exposed by the widgets and the snake_case keys expected by the
-/// Node/Express API.
+/// This client wraps the backend REST API and handles details such as
+/// authorization headers, query parameter encoding, and JSON decoding.
+/// It also converts between the camelCase naming used in Flutter widgets
+/// and the snake_case expected by the Node/Express backend.
 class ApiClient {
   final String baseUrl;
   final http.Client _http = http.Client();
 
-  /// Optional access token used to authorize requests with the
-  /// Supabase backend.  Call [setAuthToken] after signing in to
-  /// automatically attach `Authorization: Bearer <token>` on every
-  /// request.
+  /// Optional bearer token from Supabase auth.  Set this after login
+  /// using [setAuthToken] so authenticated endpoints work correctly.
   String? _authToken;
 
   ApiClient({required this.baseUrl});
 
-  /// Update the bearer token used for authorization.  Passing `null`
-  /// clears the token.
+  /// Set or clear the authorization token.  Pass `null` to clear.
   void setAuthToken(String? token) {
     _authToken = token;
   }
 
-  /// Compose default headers for every request.  Includes JSON
-  /// content‑type and, if set, the Supabase bearer token.
+  /// Build default headers for all requests.
   Map<String, String> get defaultHeaders {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
+    final headers = <String, String>{'Content-Type': 'application/json'};
     final tok = _authToken;
     if (tok != null && tok.isNotEmpty) {
       headers['Authorization'] = 'Bearer $tok';
@@ -39,24 +32,15 @@ class ApiClient {
     return headers;
   }
 
-  // -----------------------------------------------------------------
-  // Rides: Search
-  //
-  // Search rides by `from`, `to`, `when` (date), and `type`.  These
-  // parameters map directly into the backend’s query string.  The
-  // returned list contains raw JSON maps.
-  Future<List<dynamic>> searchRides({
-    String? from,
-    String? to,
-    String? when,
-    String? type,
-  }) async {
+  // ---------------------------------------------------------------------------
+  // Rides: search by from/to/date/type
+  Future<List<dynamic>> searchRides({String? from, String? to, String? when, String? type}) async {
     final qp = <String, String>{};
     if (from != null && from.isNotEmpty) qp['from'] = from;
     if (to != null && to.isNotEmpty) qp['to'] = to;
     if (when != null && when.isNotEmpty) qp['when'] = when;
     if (type != null && type.isNotEmpty) qp['type'] = type;
-    final uri = Uri.parse('$baseUrl/rides/search').replace(queryParameters: qp);
+    final uri = Uri.parse('$baseUrl/rides/search').replace(queryParameters: qp.isEmpty ? null : qp);
     final resp = await _http.get(uri, headers: defaultHeaders);
     if (resp.statusCode >= 400) {
       throw Exception('API ${resp.statusCode}: ${resp.body}');
@@ -65,21 +49,14 @@ class ApiClient {
     return (data is List) ? data : <dynamic>[];
   }
 
-  // -----------------------------------------------------------------
-  // Rides: Publish
-  //
-  // Publish a new ride.  Converts camelCase keys into the snake_case
-  // fields expected by the backend.  Accepts a combined `departAt`
-  // value (YYYY‑MM‑DD or YYYY‑MM‑DD HH:mm) and splits it on the
-  // backend.  `rideType` defaults to `private`.
+  // ---------------------------------------------------------------------------
+  // Rides: publish a ride
   Future<Map<String, dynamic>> publishRide({
     required String fromLocation,
     required String toLocation,
     required String departAt,
     required int seats,
     required int pricePerSeatInr,
-    // Default to "private_pool" which is a valid value per the
-    // rides_ride_type_check constraint in the database.
     String rideType = 'private_pool',
     String? carPlate,
     String? carModel,
@@ -91,56 +68,85 @@ class ApiClient {
       'seats_total': seats,
       'price_per_seat_inr': pricePerSeatInr,
       'ride_type': rideType,
-      if (carPlate != null) 'car_plate': carPlate,
-      if (carModel != null) 'car_model': carModel,
     };
+    if (carPlate != null) body['car_plate'] = carPlate;
+    if (carModel != null) body['car_model'] = carModel;
     final uri = Uri.parse('$baseUrl/rides');
-    final resp = await _http.post(uri,
-        headers: defaultHeaders, body: jsonEncode(body));
+    final resp = await _http.post(uri, headers: defaultHeaders, body: jsonEncode(body));
     if (resp.statusCode >= 400) {
       throw Exception('API ${resp.statusCode}: ${resp.body}');
     }
     return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
-  // -----------------------------------------------------------------
-  // Rides: Get a single ride by ID
+  // ---------------------------------------------------------------------------
+  // Rides: fetch a single ride
   Future<Map<String, dynamic>> getRide(String rideId) async {
-    final resp = await _http.get(
-      Uri.parse('$baseUrl/rides/$rideId'),
-      headers: defaultHeaders,
-    );
+    final resp = await _http.get(Uri.parse('$baseUrl/rides/$rideId'), headers: defaultHeaders);
     if (resp.statusCode >= 400) {
       throw Exception('API ${resp.statusCode}: ${resp.body}');
     }
     return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
-  // -----------------------------------------------------------------
-  // Bookings: Request booking
-  Future<Map<String, dynamic>> requestBooking(String rideId, int seats,
-      {String? uid}) async {
-    // Optionally pass uid as a query parameter when bearer auth is not available.
-    final uri = Uri.parse('$baseUrl/bookings')
-        .replace(queryParameters: uid != null && uid.isNotEmpty ? {'uid': uid} : null);
-    final resp = await _http.post(
-      uri,
-      headers: defaultHeaders,
-      body: jsonEncode({'ride_id': rideId, 'seats': seats}),
-    );
+  // ---------------------------------------------------------------------------
+  // Bookings: request a booking
+  Future<Map<String, dynamic>> requestBooking(
+      String rideId,
+      int seats, {
+        String? uid,
+        String? pickupStopId,
+        String? dropStopId,
+      }) async {
+    final qp = <String, String>{};
+    if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
+    final uri = Uri.parse('$baseUrl/bookings').replace(queryParameters: qp.isEmpty ? null : qp);
+    final body = <String, dynamic>{
+      'ride_id': rideId,
+      'seats_requested': seats,
+    };
+    if (pickupStopId != null) body['pickup_stop_id'] = pickupStopId;
+    if (dropStopId != null) body['drop_stop_id'] = dropStopId;
+    final resp = await _http.post(uri, headers: defaultHeaders, body: jsonEncode(body));
     if (resp.statusCode >= 400) {
       throw Exception('API ${resp.statusCode}: ${resp.body}');
     }
     return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
-  // -----------------------------------------------------------------
-  // Rides: My rides (published or booked)
+  // ---------------------------------------------------------------------------
+  // Routes: list routes between two cities
+  Future<List<dynamic>> getRoutes({String? from, String? to}) async {
+    final qp = <String, String>{};
+    if (from != null && from.isNotEmpty) qp['from'] = from;
+    if (to != null && to.isNotEmpty) qp['to'] = to;
+    final uri = Uri.parse('$baseUrl/routes').replace(queryParameters: qp.isEmpty ? null : qp);
+    final resp = await _http.get(uri, headers: defaultHeaders);
+    if (resp.statusCode >= 400) {
+      throw Exception('API ${resp.statusCode}: ${resp.body}');
+    }
+    final data = jsonDecode(resp.body);
+    return (data is List) ? data : <dynamic>[];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Routes: list stops for a route
+  Future<List<dynamic>> getRouteStops(String routeId) async {
+    final uri = Uri.parse('$baseUrl/routes/$routeId/stops');
+    final resp = await _http.get(uri, headers: defaultHeaders);
+    if (resp.statusCode >= 400) {
+      throw Exception('API ${resp.statusCode}: ${resp.body}');
+    }
+    final data = jsonDecode(resp.body);
+    return (data is List) ? data : <dynamic>[];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rides: get my rides (published or booked)
   Future<List<dynamic>> myRides({String role = 'driver', String? uid}) async {
     final qp = <String, String>{'role': role};
     if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
-    final uri =
-    Uri.parse('$baseUrl/rides/mine').replace(queryParameters: qp);
+    final uri = Uri.parse('$baseUrl/rides/mine').replace(queryParameters: qp);
     final resp = await _http.get(uri, headers: defaultHeaders);
     if (resp.statusCode >= 400) {
       throw Exception('API ${resp.statusCode}: ${resp.body}');
@@ -149,11 +155,12 @@ class ApiClient {
     return (data is List) ? data : <dynamic>[];
   }
 
-  // -----------------------------------------------------------------
-  // Bookings: Inbox list
+  // ---------------------------------------------------------------------------
+  // Bookings: inbox (pending/confirmed bookings for rider or driver)
   Future<List<dynamic>> inbox({String? uid}) async {
-    final uri = Uri.parse('$baseUrl/bookings/inbox').replace(
-        queryParameters: uid != null && uid.isNotEmpty ? {'uid': uid} : null);
+    final qp = <String, String>{};
+    if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
+    final uri = Uri.parse('$baseUrl/bookings/inbox').replace(queryParameters: qp.isEmpty ? null : qp);
     final resp = await _http.get(uri, headers: defaultHeaders);
     if (resp.statusCode >= 400) {
       throw Exception('API ${resp.statusCode}: ${resp.body}');
@@ -162,13 +169,11 @@ class ApiClient {
     return (data is List) ? data : <dynamic>[];
   }
 
-  // -----------------------------------------------------------------
-  // Messages: list conversation
+  // ---------------------------------------------------------------------------
+  // Messages: list all messages in a conversation (optional; not yet used)
   Future<List<dynamic>> messages(String rideId, String otherUserId) async {
-    final uri = Uri.parse('$baseUrl/messages').replace(queryParameters: {
-      'ride_id': rideId,
-      'other_user_id': otherUserId,
-    });
+    final uri = Uri.parse('$baseUrl/messages')
+        .replace(queryParameters: {'ride_id': rideId, 'other_user_id': otherUserId});
     final resp = await _http.get(uri, headers: defaultHeaders);
     if (resp.statusCode >= 400) {
       throw Exception('API ${resp.statusCode}: ${resp.body}');
@@ -177,19 +182,20 @@ class ApiClient {
     return (data is List) ? data : <dynamic>[];
   }
 
-  // -----------------------------------------------------------------
-  // Messages: send a new message
+  // ---------------------------------------------------------------------------
+  // Messages: send a message (optional; not yet used)
   Future<Map<String, dynamic>> sendMessage(
-      String rideId, String recipientId, String text) async {
-    final resp = await _http.post(
-      Uri.parse('$baseUrl/messages'),
-      headers: defaultHeaders,
-      body: jsonEncode({
-        'ride_id': rideId,
-        'recipient_id': recipientId,
-        'body': text,
-      }),
-    );
+      String rideId,
+      String recipientId,
+      String text,
+      ) async {
+    final body = {
+      'ride_id': rideId,
+      'recipient_id': recipientId,
+      'body': text,
+    };
+    final uri = Uri.parse('$baseUrl/messages');
+    final resp = await _http.post(uri, headers: defaultHeaders, body: jsonEncode(body));
     if (resp.statusCode >= 400) {
       throw Exception('API ${resp.statusCode}: ${resp.body}');
     }
