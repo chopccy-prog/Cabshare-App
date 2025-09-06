@@ -1,11 +1,4 @@
 // lib/screens/tab_profile.dart
-//
-// Profile tab displays the current user’s Supabase auth info and the
-// extended profile stored in the `profiles` table.  It also allows
-// updating fields (name, phone, address) and shows verification flags.
-// If no user is signed in, it provides a sign‑in button.  Logged‑in
-// users get a “Log out” button.
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -97,7 +90,6 @@ class _TabProfileState extends State<TabProfile> {
         children: [
           Text('Profile', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 16),
-          // Show auth information or login prompt
           if (authUser != null) ...[
             Text('Email: $email'),
             if (phoneAuth.isNotEmpty) Text('Phone (auth): $phoneAuth'),
