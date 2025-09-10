@@ -1,9 +1,11 @@
+// lib/screens/ride_detail.dart
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
 class RideDetail extends StatefulWidget {
   final ApiClient api;
   final Map<String, dynamic> ride;
+
   const RideDetail({super.key, required this.api, required this.ride});
 
   @override
@@ -15,134 +17,184 @@ class _RideDetailState extends State<RideDetail> {
   String? _fromStopId;
   String? _toStopId;
   int _seats = 1;
-  bool _loading = true;
+  bool _loading = false;
+
+  String get _rideId =>
+      (widget.ride['id'] ?? widget.ride['ride_id'] ?? '').toString();
+
+  Future<void> _loadStops() async {
+    // If your ride has a route_id, pull its stops; else show a simple From/To pair.
+    final routeId = widget.ride['route_id'];
+    if (routeId != null && routeId.toString().isNotEmpty) {
+      try {
+        final list = await widget.api.getRouteStops(routeId.toString());
+        setState(() {
+          _stops = list.cast<Map<String, dynamic>>();
+        });
+      } catch (e) {
+        debugPrint('getRouteStops failed: $e');
+        // fall back to simple two stops below
+      }
+    }
+
+    if (_stops.isEmpty) {
+      // Minimal fallback to keep booking unblocked
+      final fromName =
+          widget.ride['from_location'] ?? widget.ride['from_city'] ?? 'Origin';
+      final toName =
+          widget.ride['to_location'] ?? widget.ride['to_city'] ?? 'Destination';
+
+      _stops = [
+        {'id': 'from', 'name': fromName},
+        {'id': 'to', 'name': toName},
+      ];
+    }
+
+    // sensible defaults
+    _fromStopId = _stops.first['id'].toString();
+    _toStopId = _stops.last['id'].toString();
+    setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final stops = await widget.api.getRouteStops(widget.ride['route_id']);
-      setState(() {
-        _stops = stops;
-        if (stops.isNotEmpty) {
-          _fromStopId = stops.first['stop_id'] ?? stops.first['id'];
-          _toStopId = stops.length > 1
-              ? (stops.last['stop_id'] ?? stops.last['id'])
-              : (stops.first['stop_id'] ?? stops.first['id']);
-        }
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    } finally {
-      setState(() => _loading = false);
-    }
+    _loadStops();
   }
 
   Future<void> _book() async {
-    if (_fromStopId == null || _toStopId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select pickup and drop stops')),
-      );
+    if (_rideId.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Invalid ride id')));
       return;
     }
 
+    setState(() => _loading = true);
     try {
-      final uid = await _whoAmI(); // replace with your auth user id getter
-      final pricePerSeat = (widget.ride['price_inr'] ?? 0) as num;
+      Map<String, dynamic> result;
 
-      await widget.api.createBooking(
-        rideId: widget.ride['id'],
-        riderId: uid,
-        fromStopId: _fromStopId!,
-        toStopId: _toStopId!,
-        seats: _seats,
-        pricePerSeatInr: pricePerSeat,
-        depositInr: 0,        // safe default; change if you take deposits
-        autoApprove: false,   // driver can toggle later if you add that
-      );
+      // Prefer createBooking if we have stop ids; otherwise fallback to requestBooking.
+      if (_fromStopId != null && _toStopId != null) {
+        result = await widget.api.createBooking(
+          rideId: _rideId,
+          fromStopId: _fromStopId!,
+          toStopId: _toStopId!,
+          seats: _seats,
+          // optional money/flags can be left null to let backend compute
+        );
+      } else {
+        // Old backend compatibility (no stop ids)
+        result = await widget.api.requestBooking(_rideId, _seats);
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Booking requested')),
+          const SnackBar(content: Text('Booking request submitted')),
         );
-        Navigator.of(context).pop();
+        Navigator.pop(context, result);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Booking failed: $e')));
+      debugPrint('Booking failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Booking failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-  }
-
-  Future<String> _whoAmI() async {
-    // TODO: wire your auth. For now expect backend to accept the JWT bearer
-    // and resolve it; or pass Supabase user id if you keep it on client.
-    // If you already store uid in memory, return that here.
-    throw Exception('Implement auth uid provider');
   }
 
   @override
   Widget build(BuildContext context) {
-    final ride = widget.ride;
-    final from = ride['from_city'] ?? ride['from'] ?? 'unknown';
-    final to = ride['to_city'] ?? ride['to'] ?? 'unknown';
-    final start = (ride['start_time'] ?? '').toString().replaceFirst('T', ' ');
-    final price = ride['price_inr'] ?? 0;
-    final seatsLeft = ride['seats_left'] ?? ride['seats_available'] ?? 0;
-    final type = ride['type'] ?? '';
+    final from = widget.ride['from_location'] ?? widget.ride['from_city'] ?? '-';
+    final to = widget.ride['to_location'] ?? widget.ride['to_city'] ?? '-';
+    final date = widget.ride['depart_at'] ?? widget.ride['departure_at'] ?? '';
+    final price = widget.ride['price_per_seat_inr'] ?? widget.ride['fare_per_seat_inr'] ?? '-';
+    final type = widget.ride['ride_type'] ?? widget.ride['type'] ?? '';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Ride Details')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: _loading
-            ? const Center(child: CircularProgressIndicator.adaptive())
-            : ListView(
+        child: Column(
           children: [
-            Text('$from → $to', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text('Date: $start'),
-            Text('Seats available: $seatsLeft'),
-            Text('Type: $type'),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _fromStopId,
-              items: _stops
-                  .map((s) => DropdownMenuItem(
-                value: (s['stop_id'] ?? s['id']).toString(),
-                child: Text(s['stop_name'] ?? s['name'] ?? 'Stop'),
-              ))
-                  .toList(),
-              onChanged: (v) => setState(() => _fromStopId = v),
-              decoration: const InputDecoration(labelText: 'Pickup stop'),
+            Card(
+              child: ListTile(
+                title: Text('$from → $to'),
+                subtitle: Text('Date: $date  |  ₹$price  |  $type'),
+              ),
             ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _toStopId,
-              items: _stops
-                  .map((s) => DropdownMenuItem(
-                value: (s['stop_id'] ?? s['id']).toString(),
-                child: Text(s['stop_name'] ?? s['name'] ?? 'Stop'),
-              ))
-                  .toList(),
-              onChanged: (v) => setState(() => _toStopId = v),
-              decoration: const InputDecoration(labelText: 'Drop stop'),
+            const SizedBox(height: 12),
+
+            // Stop selectors
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _fromStopId,
+                    items: _stops
+                        .map((s) => DropdownMenuItem<String>(
+                      value: s['id'].toString(),
+                      child: Text(s['name']?.toString() ?? s['id'].toString()),
+                    ))
+                        .toList(),
+                    onChanged: (v) => setState(() => _fromStopId = v),
+                    decoration: const InputDecoration(
+                      labelText: 'Pickup stop',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _toStopId,
+                    items: _stops
+                        .map((s) => DropdownMenuItem<String>(
+                      value: s['id'].toString(),
+                      child: Text(s['name']?.toString() ?? s['id'].toString()),
+                    ))
+                        .toList(),
+                    onChanged: (v) => setState(() => _toStopId = v),
+                    decoration: const InputDecoration(
+                      labelText: 'Drop stop',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              value: _seats,
-              items: List.generate(6, (i) => i + 1)
-                  .map((n) => DropdownMenuItem(value: n, child: Text(n.toString())))
-                  .toList(),
-              onChanged: (v) => setState(() => _seats = v ?? 1),
-              decoration: const InputDecoration(labelText: 'Seats'),
+            const SizedBox(height: 12),
+
+            // Seats selector
+            Row(
+              children: [
+                const Text('Seats:'),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _seats > 1 ? () => setState(() => _seats--) : null,
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+                Text('$_seats', style: Theme.of(context).textTheme.titleMedium),
+                IconButton(
+                  onPressed: () => setState(() => _seats++),
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _book,
-              child: Text('Book Seat  •  ₹${price * _seats}'),
+            const Spacer(),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _loading ? null : _book,
+                icon: _loading
+                    ? const SizedBox(
+                    width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.check),
+                label: const Text('Request booking'),
+              ),
             ),
           ],
         ),

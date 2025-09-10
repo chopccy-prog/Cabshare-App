@@ -1,3 +1,4 @@
+// lib/screens/tab_search.dart
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 import 'ride_detail.dart';
@@ -11,85 +12,149 @@ class TabSearch extends StatefulWidget {
 }
 
 class _TabSearchState extends State<TabSearch> {
-  final _fromCtl = TextEditingController(text: 'Nashik');
-  final _toCtl = TextEditingController(text: 'Pune');
-  DateTime _date = DateTime.now();
-  String? _type; // private | private_pool | commercial_pool
-  bool _loading = false;
-  List<Map<String, dynamic>> _results = [];
+  // shared cities (same list used in Publish screen)
+  static const _cities = <String>[
+    'Bengaluru', 'Hyderabad', 'Chennai', 'Pune', 'Mumbai', 'Delhi', 'Gurugram',
+    'Noida', 'Kolkata', 'Ahmedabad'
+  ];
 
-  Future<void> _search() async {
+  String? _fromCity;
+  String? _toCity;
+  DateTime? _date; // pick just the date (backend expects yyyy-MM-dd)
+  String? _type;   // private_pool | commercial_pool | commercial_full_car
+
+  bool _loading = false;
+  List<Map<String, dynamic>> _results = const [];
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+      initialDate: _date ?? now,
+    );
+    if (picked != null) {
+      setState(() => _date = picked);
+    }
+  }
+
+  Future<void> _runSearch() async {
+    if (_fromCity == null || _toCity == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please choose both From and To cities.')),
+      );
+      return;
+    }
     setState(() => _loading = true);
     try {
-      final when = _date.toIso8601String().substring(0, 10);
+      final when = _date == null
+          ? null
+          : "${_date!.year.toString().padLeft(4, '0')}-"
+          "${_date!.month.toString().padLeft(2, '0')}-"
+          "${_date!.day.toString().padLeft(2, '0')}";
       final list = await widget.api.searchRides(
-        from: _fromCtl.text.trim(),
-        to: _toCtl.text.trim(),
+        from: _fromCity,
+        to: _toCity,
         when: when,
         type: _type,
       );
       setState(() => _results = list);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
+        SnackBar(content: Text('Search failed: $e')),
       );
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Widget _cityPicker({
+    required String label,
+    required String? value,
+    required void Function(String?) onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+      items: _cities.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _typeChips() {
+    const types = [
+      ['private_pool', 'Private pool'],
+      ['commercial_pool', 'Commercial pool'],
+      ['commercial_full_car', 'Commercial Full car'],
+    ];
+    return Wrap(
+      spacing: 8,
+      children: types.map((t) {
+        final selected = _type == t[0];
+        return ChoiceChip(
+          label: Text(t[1]),
+          selected: selected,
+          onSelected: (_) => setState(() => _type = t[0]),
+        );
+      }).toList(),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: ListView(
+    final api = widget.api;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Search rides')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-          const Text('Search Rides', style: TextStyle(fontSize: 18)),
-          const SizedBox(height: 12),
-          TextField(controller: _fromCtl, decoration: const InputDecoration(labelText: 'From city')),
-          const SizedBox(height: 8),
-          TextField(controller: _toCtl, decoration: const InputDecoration(labelText: 'To city')),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      firstDate: DateTime.now().subtract(const Duration(days: 0)),
-                      lastDate: DateTime.now().add(const Duration(days: 120)),
-                      initialDate: _date,
-                    );
-                    if (picked != null) setState(() => _date = picked);
-                  },
-                  child: Text('Date: ${_date.toLocal().toString().substring(0, 10)}'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  value: _type,
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('Any type')),
-                    DropdownMenuItem(value: 'private', child: Text('Private')),
-                    DropdownMenuItem(value: 'private_pool', child: Text('Private pool')),
-                    DropdownMenuItem(value: 'commercial_pool', child: Text('Commercial pool')),
-                  ],
-                  onChanged: (v) => setState(() => _type = v),
-                  decoration: const InputDecoration(labelText: 'Type'),
-                ),
-              ),
-            ],
+          _cityPicker(
+            label: 'From city',
+            value: _fromCity,
+            onChanged: (v) => setState(() => _fromCity = v),
           ),
           const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _loading ? null : _search,
-            child: _loading ? const CircularProgressIndicator.adaptive() : const Text('Search'),
+          _cityPicker(
+            label: 'To city',
+            value: _toCity,
+            onChanged: (v) => setState(() => _toCity = v),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            readOnly: true,
+            decoration: InputDecoration(
+              labelText: 'Date (optional)',
+              hintText: 'Tap to pick',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.calendar_month),
+                onPressed: _pickDate,
+              ),
+            ),
+            controller: TextEditingController(
+              text: _date == null
+                  ? ''
+                  : "${_date!.year.toString().padLeft(4, '0')}-"
+                  "${_date!.month.toString().padLeft(2, '0')}-"
+                  "${_date!.day.toString().padLeft(2, '0')}",
+            ),
+            onTap: _pickDate,
+          ),
+          const SizedBox(height: 12),
+          _typeChips(),
           const SizedBox(height: 16),
-          for (final r in _results) _RideTile(ride: r, api: widget.api),
+          FilledButton(
+            onPressed: _loading ? null : _runSearch,
+            child: _loading
+                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Search'),
+          ),
+          const SizedBox(height: 20),
+          if (_results.isEmpty) const Text('No results yet. Try searching.'),
+          ..._results.map((ride) => _RideTile(api: api, ride: ride)).toList(),
         ],
       ),
     );
@@ -97,22 +162,22 @@ class _TabSearchState extends State<TabSearch> {
 }
 
 class _RideTile extends StatelessWidget {
-  final Map<String, dynamic> ride;
   final ApiClient api;
-  const _RideTile({required this.ride, required this.api});
+  final Map<String, dynamic> ride;
+  const _RideTile({required this.api, required this.ride});
 
   @override
   Widget build(BuildContext context) {
-    final from = ride['from_city'] ?? ride['from'] ?? 'unknown';
-    final to = ride['to_city'] ?? ride['to'] ?? 'unknown';
-    final start = (ride['start_time'] ?? '').toString().replaceFirst('T', ' ');
-    final price = ride['price_inr']; // normalized
-    final type = (ride['type'] ?? '').toString();
+    final from = ride['from_location'] ?? ride['from_city'] ?? '-';
+    final to = ride['to_location'] ?? ride['to_city'] ?? '-';
+    final dt = ride['depart_at'] ?? ride['departure_at'] ?? '';
+    final price = ride['price_per_seat_inr'] ?? ride['fare_per_seat_inr'] ?? '-';
 
     return Card(
       child: ListTile(
         title: Text('$from → $to'),
-        subtitle: Text('$start • ₹${price ?? 0} • $type'),
+        subtitle: Text('Depart: $dt     ₹$price/seat'),
+        trailing: const Icon(Icons.chevron_right),
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(

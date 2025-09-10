@@ -1,11 +1,5 @@
-// lib/screens/home_shell.dart
-//
-// Home shell that accepts an [ApiClient] from the parent (main.dart)
-// so all tabs share the same API instance and bearer token.
-
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
-
 import 'tab_search.dart';
 import 'tab_publish.dart';
 import 'tab_my_rides.dart';
@@ -13,38 +7,34 @@ import 'tab_inbox.dart';
 import 'tab_profile.dart';
 
 class HomeShell extends StatefulWidget {
-  final ApiClient api;
   const HomeShell({super.key, required this.api});
+  final ApiClient api;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends State<HomeShell> {
-  int _idx = 0;
+  int _index = 0;
 
   @override
   Widget build(BuildContext context) {
-    final api = widget.api;
+    final tabs = [
+      TabSearch(api: widget.api),
+      TabPublish(api: widget.api),
+      TabMyRides(api: widget.api),
+      TabInbox(api: widget.api),
+      TabProfile(api: widget.api), // <-- pass api (fixes compile error)
+    ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Cabshare')),
-      body: IndexedStack(
-        index: _idx,
-        children: <Widget>[
-          TabSearch(api: api),
-          TabPublish(api: api),
-          TabMyRides(api: api),
-          const TabInbox(),   // <- updated: no api param
-          const TabProfile(), // <- updated: no api param
-        ],
-      ),
+      body: tabs[_index],
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _idx,
-        onDestinationSelected: (i) => setState(() => _idx = i),
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
-          NavigationDestination(icon: Icon(Icons.add_circle), label: 'Publish'),
+          NavigationDestination(icon: Icon(Icons.add_circle_outline), label: 'Publish'),
           NavigationDestination(icon: Icon(Icons.directions_car), label: 'Your Rides'),
           NavigationDestination(icon: Icon(Icons.inbox), label: 'Inbox'),
           NavigationDestination(icon: Icon(Icons.person), label: 'Profile'),

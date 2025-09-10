@@ -1,98 +1,113 @@
 // lib/services/api_client.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 
+/// Blended ApiClient that supports both the older Node/Express endpoints
+/// and the newer PostgREST-like patterns we tried, while keeping the app
+/// screens working without changes.
 class ApiClient {
-  ApiClient({String? base})
-      : base = base ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://10.0.2.2:3000');
+  final String baseUrl;
+  final http.Client _http = http.Client();
 
-  final String base;
+  String? _authToken; // optional bearer from Supabase/Firebase
+  ApiClient({required this.baseUrl});
 
-  String? _bearer;
-  void setAuthToken(String? token) => _bearer = token;
+  void setAuthToken(String? token) => _authToken = token;
 
-  Map<String, String> _headers() => {
+  Map<String, String> get _headers => {
     'Content-Type': 'application/json',
-    if (_bearer != null) 'Authorization': 'Bearer $_bearer',
+    'Accept': 'application/json',
+    if (_authToken != null && _authToken!.isNotEmpty)
+      'Authorization': 'Bearer $_authToken',
   };
 
-  /// ===== Auth identity (Firebase) =====
-  String? whoAmI() => FirebaseAuth.instance.currentUser?.uid;
+  /// Current Firebase user id (if signed in)
+  String? whoAmI() => fb.FirebaseAuth.instance.currentUser?.uid;
 
-  /// ===== Profiles =====
-  Future<Map<String, dynamic>?> getProfile({String? uid}) async {
-    final id = uid ?? whoAmI();
-    if (id == null) return null;
-    final r = await http.get(Uri.parse('$base/profiles?user_id=eq.$id'), headers: _headers());
-    if (r.statusCode >= 400) throw Exception('getProfile: ${r.body}');
-    final list = jsonDecode(r.body) as List;
-    return list.isEmpty ? null : list.first as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> upsertProfile(Map<String, dynamic> fields, {String? uid}) async {
-    final id = uid ?? whoAmI();
-    if (id == null) throw Exception('Not signed in');
-    final body = {...fields, 'user_id': id};
-    final r = await http.post(
-      Uri.parse('$base/profiles'),
-      headers: _headers()..putIfAbsent('Prefer', () => 'resolution=merge-duplicates,return=representation'),
-      body: jsonEncode([body]),
-    );
-    if (r.statusCode >= 400) throw Exception('upsertProfile: ${r.body}');
-    return (jsonDecode(r.body) as List).first as Map<String, dynamic>;
-  }
-
-  /// ===== Vehicles =====
-  Future<Map<String, dynamic>> addVehicle(Map<String, dynamic> v) async {
-    final uid = whoAmI();
-    if (uid == null) throw Exception('Not signed in');
-    final body = {...v, 'owner_id': uid};
-    final r = await http.post(
-      Uri.parse('$base/vehicles'),
-      headers: _headers()..putIfAbsent('Prefer', () => 'return=representation'),
-      body: jsonEncode([body]),
-    );
-    if (r.statusCode >= 400) throw Exception('addVehicle: ${r.body}');
-    return (jsonDecode(r.body) as List).first;
-  }
-
-  Future<List<Map<String, dynamic>>> myVehicles() async {
-    final uid = whoAmI();
-    if (uid == null) return [];
-    final r = await http.get(Uri.parse('$base/vehicles?owner_id=eq.$uid'), headers: _headers());
-    if (r.statusCode >= 400) throw Exception('myVehicles: ${r.body}');
-    return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
-  }
-
-  /// ===== Rides (reads view) =====
+  // ---------------------------------------------------------------------------
+  // SEARCH
+  // Matches the Search screen: from/to/when/type
   Future<List<Map<String, dynamic>>> searchRides({
-    required String fromCity,
-    required String toCity,
-    DateTime? fromDate,
+    String? from,
+    String? to,
+    String? when,
+    String? type,
   }) async {
-    final qp = <String>[
-      'from_city=eq.${Uri.encodeComponent(fromCity)}',
-      'to_city=eq.${Uri.encodeComponent(toCity)}',
-      if (fromDate != null) 'departure_at=gte.${fromDate.toIso8601String()}',
-      'status=eq.published',
-      'order=departure_at.asc',
-    ].join('&');
-    final r = await http.get(Uri.parse('$base/v_rides_list?$qp'), headers: _headers());
-    if (r.statusCode >= 400) throw Exception('searchRides: ${r.body}');
-    return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
+    final qp = <String, String>{};
+    if (from != null && from.isNotEmpty) qp['from'] = from;
+    if (to != null && to.isNotEmpty) qp['to'] = to;
+    if (when != null && when.isNotEmpty) qp['when'] = when;
+    if (type != null && type.isNotEmpty) qp['type'] = type;
+
+    final uri = Uri.parse('$baseUrl/rides/search')
+        .replace(queryParameters: qp.isEmpty ? null : qp);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode >= 400) {
+      throw Exception('searchRides ${r.statusCode}: ${r.body}');
+    }
+    final data = jsonDecode(r.body);
+    return (data is List)
+        ? data.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
   }
 
-  Future<List<Map<String, dynamic>>> myPublishedRides() async {
-    final uid = whoAmI();
-    if (uid == null) return [];
-    final qp = 'driver_id=eq.$uid&status=eq.published&order=departure_at.desc';
-    final r = await http.get(Uri.parse('$base/v_rides_list?$qp'), headers: _headers());
-    if (r.statusCode >= 400) throw Exception('myPublishedRides: ${r.body}');
-    return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
+  // ---------------------------------------------------------------------------
+  // ROUTES/STOPS (for Ride detail stop pickers)
+  Future<List<Map<String, dynamic>>> getRouteStops(String routeId) async {
+    final uri = Uri.parse('$baseUrl/routes/$routeId/stops');
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode >= 400) {
+      throw Exception('getRouteStops ${r.statusCode}: ${r.body}');
+    }
+    final data = jsonDecode(r.body);
+    return (data is List)
+        ? data.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
   }
 
-  /// ===== Bookings =====
+  // ---------------------------------------------------------------------------
+  // RIDES (publish + detail)
+  Future<Map<String, dynamic>> publishRide({
+    required String fromLocation,
+    required String toLocation,
+    required String departAt,
+    required int seats,
+    required int pricePerSeatInr,
+    String rideType = 'private_pool',
+    String? carPlate,
+    String? carModel,
+  }) async {
+    final body = <String, dynamic>{
+      'from_location': fromLocation,
+      'to_location': toLocation,
+      'depart_at': departAt,
+      'seats_total': seats,
+      'price_per_seat_inr': pricePerSeatInr,
+      'ride_type': rideType,
+      if (carPlate != null) 'car_plate': carPlate,
+      if (carModel != null) 'car_model': carModel,
+    };
+    final uri = Uri.parse('$baseUrl/rides');
+    final r = await _http.post(uri, headers: _headers, body: jsonEncode(body));
+    if (r.statusCode >= 400) {
+      throw Exception('publishRide ${r.statusCode}: ${r.body}');
+    }
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getRide(String rideId) async {
+    final uri = Uri.parse('$baseUrl/rides/$rideId');
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode >= 400) {
+      throw Exception('getRide ${r.statusCode}: ${r.body}');
+    }
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  // ---------------------------------------------------------------------------
+  // BOOKINGS
+  // Newer path used by RideDetail when we have explicit stop ids.
   Future<Map<String, dynamic>> createBooking({
     required String rideId,
     required String fromStopId,
@@ -103,40 +118,149 @@ class ApiClient {
     int? depositInr,
   }) async {
     final uid = whoAmI();
-    if (uid == null) throw Exception('Not signed in');
-
-    final perSeat = pricePerSeatInr ?? 0;
-    final dep = depositInr ?? 0;
-    final total = perSeat * seats;
-
+    // Let backend compute money if not supplied
     final payload = {
       'ride_id': rideId,
-      'rider_id': uid,
+      if (uid != null) 'rider_id': uid,
+      // Support both naming styles (new vs old)
       'from_stop_id': fromStopId,
       'to_stop_id': toStopId,
+      'pickup_stop_id': fromStopId,
+      'drop_stop_id': toStopId,
       'seats_booked': seats,
-      'fare_total_inr': total,
-      'deposit_inr': dep,
-      'status': autoApprove ? 'confirmed' : 'pending',
+      'seats_requested': seats,
+      if (pricePerSeatInr != null) 'price_per_seat_inr': pricePerSeatInr,
+      if (depositInr != null) 'deposit_inr': depositInr,
+      if (autoApprove) 'status': 'confirmed',
     };
 
-    final r = await http.post(
-      Uri.parse('$base/bookings'),
-      headers: _headers()..putIfAbsent('Prefer', () => 'return=representation'),
-      body: jsonEncode([payload]),
+    final r = await _http.post(
+      Uri.parse('$baseUrl/bookings'),
+      headers: _headers,
+      body: jsonEncode(payload),
     );
-    if (r.statusCode >= 400) throw Exception('createBooking: ${r.body}');
-    return (jsonDecode(r.body) as List).first;
+    if (r.statusCode >= 400) {
+      throw Exception('createBooking ${r.statusCode}: ${r.body}');
+    }
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  /// Legacy fallback used by some screens.
+  /// Keeps old signature so we don't have to touch UI.
+  Future<Map<String, dynamic>> requestBooking(
+      String rideId,
+      int seats, {
+        String? uid,
+        String? pickupStopId,
+        String? dropStopId,
+      }) async {
+    final rider = uid ?? whoAmI();
+    final body = <String, dynamic>{
+      'ride_id': rideId,
+      if (rider != null) 'rider_id': rider,
+      'seats_requested': seats,
+      'seats': seats,
+      if (pickupStopId != null) 'pickup_stop_id': pickupStopId,
+      if (dropStopId != null) 'drop_stop_id': dropStopId,
+    };
+
+    final uri = Uri.parse('$baseUrl/bookings');
+    final r = await _http.post(uri, headers: _headers, body: jsonEncode(body));
+    if (r.statusCode >= 400) {
+      throw Exception('requestBooking ${r.statusCode}: ${r.body}');
+    }
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  // ---------------------------------------------------------------------------
+  // MY RIDES / BOOKINGS (for "Your Rides" tab)
+  Future<List<Map<String, dynamic>>> myPublishedRides() async {
+    final uid = whoAmI();
+    final qp = <String, String>{'role': 'driver', if (uid != null) 'uid': uid};
+    final uri =
+    Uri.parse('$baseUrl/rides/mine').replace(queryParameters: qp);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode >= 400) {
+      throw Exception('myPublishedRides ${r.statusCode}: ${r.body}');
+    }
+    final data = jsonDecode(r.body);
+    return (data is List)
+        ? data.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
   }
 
   Future<List<Map<String, dynamic>>> myBookings() async {
     final uid = whoAmI();
-    if (uid == null) return [];
-    final r = await http.get(
-      Uri.parse('$base/bookings?select=*,rides!inner(*)&rider_id=eq.$uid&order=created_at.desc'),
-      headers: _headers(),
-    );
-    if (r.statusCode >= 400) throw Exception('myBookings: ${r.body}');
-    return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
+    final qp = <String, String>{if (uid != null) 'uid': uid, 'role': 'rider'};
+    final uri = Uri.parse('$baseUrl/bookings/inbox')
+        .replace(queryParameters: qp.isEmpty ? null : qp);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode >= 400) {
+      throw Exception('myBookings ${r.statusCode}: ${r.body}');
+    }
+    final data = jsonDecode(r.body);
+    return (data is List)
+        ? data.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Optional existing endpoints kept for compatibility
+
+  Future<List<Map<String, dynamic>>> getRoutes({
+    String? from,
+    String? to,
+  }) async {
+    final qp = <String, String>{};
+    if (from != null && from.isNotEmpty) qp['from'] = from;
+    if (to != null && to.isNotEmpty) qp['to'] = to;
+    final uri =
+    Uri.parse('$baseUrl/routes').replace(queryParameters: qp.isEmpty ? null : qp);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode >= 400) {
+      throw Exception('getRoutes ${r.statusCode}: ${r.body}');
+    }
+    final data = jsonDecode(r.body);
+    return (data is List)
+        ? data.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
+  }
+
+  Future<List<Map<String, dynamic>>> inbox({String? uid}) async {
+    final qp = <String, String>{if (uid != null) 'uid': uid};
+    final uri = Uri.parse('$baseUrl/bookings/inbox')
+        .replace(queryParameters: qp.isEmpty ? null : qp);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode >= 400) {
+      throw Exception('inbox ${r.statusCode}: ${r.body}');
+    }
+    final data = jsonDecode(r.body);
+    return (data is List)
+        ? data.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
+  }
+
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> fields,
+      {String? uid}) async {
+    final qp = <String, String>{if (uid != null) 'uid': uid};
+    final uri = Uri.parse('$baseUrl/profiles/me')
+        .replace(queryParameters: qp.isEmpty ? null : qp);
+    final r =
+    await _http.put(uri, headers: _headers, body: jsonEncode(fields));
+    if (r.statusCode >= 400) {
+      throw Exception('updateProfile ${r.statusCode}: ${r.body}');
+    }
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getProfile({String? uid}) async {
+    final qp = <String, String>{if (uid != null) 'uid': uid};
+    final uri = Uri.parse('$baseUrl/profiles/me')
+        .replace(queryParameters: qp.isEmpty ? null : qp);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode >= 400) {
+      throw Exception('getProfile ${r.statusCode}: ${r.body}');
+    }
+    return jsonDecode(r.body) as Map<String, dynamic>;
   }
 }

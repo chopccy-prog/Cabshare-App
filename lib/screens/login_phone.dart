@@ -1,89 +1,18 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 
-class LoginPhonePage extends StatefulWidget {
-  const LoginPhonePage({super.key});
+class LoginPhone extends StatefulWidget {
+  const LoginPhone({super.key});
 
   @override
-  State<LoginPhonePage> createState() => _LoginPhonePageState();
+  State<LoginPhone> createState() => _LoginPhoneState();
 }
 
-class _LoginPhonePageState extends State<LoginPhonePage> {
+class _LoginPhoneState extends State<LoginPhone> {
   final _phoneCtrl = TextEditingController();
   final _codeCtrl = TextEditingController();
-
   String? _verificationId;
   bool _sending = false;
-  bool _verifying = false;
-
-  Future<void> _sendCode() async {
-    final phone = _phoneCtrl.text.trim();
-    if (phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter phone number')),
-      );
-      return;
-    }
-
-    setState(() => _sending = true);
-    try {
-      final verificationId = await AuthService().startPhoneVerification(
-        e164Phone: phone,
-      );
-      setState(() => _verificationId = verificationId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('OTP sent')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  Future<void> _verifyCode() async {
-    final code = _codeCtrl.text.trim();
-    if (_verificationId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Send OTP first')),
-      );
-      return;
-    }
-    if (code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter OTP')),
-      );
-      return;
-    }
-
-    setState(() => _verifying = true);
-    try {
-      await AuthService().confirmSmsCode(
-        verificationId: _verificationId!,
-        smsCode: code,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Phone login successful')),
-        );
-        Navigator.of(context).pop(true); // return to previous screen
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Verification failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _verifying = false);
-    }
-  }
 
   @override
   void dispose() {
@@ -92,43 +21,65 @@ class _LoginPhonePageState extends State<LoginPhonePage> {
     super.dispose();
   }
 
+  Future<void> _sendCode() async {
+    setState(() => _sending = true);
+    try {
+      final vId = await AuthService().startPhoneVerification(_phoneCtrl.text.trim());
+      setState(() => _verificationId = vId);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Verification failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _confirm() async {
+    final vId = _verificationId;
+    if (vId == null) return;
+    setState(() => _sending = true);
+    try {
+      await AuthService().confirmSmsCode(vId, _codeCtrl.text.trim());
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Confirm failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final hasVerificationId = _verificationId != null;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Login with phone')),
+      appBar: AppBar(title: const Text('Phone Login')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: ListView(
+        child: Column(
           children: [
             TextField(
               controller: _phoneCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Phone number (+91XXXXXXXXXX)',
-              ),
+              decoration: const InputDecoration(labelText: 'Phone (+91...)'),
               keyboardType: TextInputType.phone,
             ),
             const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _sending ? null : _sendCode,
-              child: _sending
-                  ? const CircularProgressIndicator.adaptive()
-                  : const Text('Send OTP'),
-            ),
-            const SizedBox(height: 24),
-            if (_verificationId != null) ...[
+            if (hasVerificationId)
               TextField(
                 controller: _codeCtrl,
-                decoration: const InputDecoration(labelText: 'Enter OTP'),
+                decoration: const InputDecoration(labelText: 'OTP Code'),
                 keyboardType: TextInputType.number,
               ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _verifying ? null : _verifyCode,
-                child: _verifying
-                    ? const CircularProgressIndicator.adaptive()
-                    : const Text('Verify & Login'),
-              ),
-            ],
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _sending ? null : (hasVerificationId ? _confirm : _sendCode),
+              child: Text(_sending
+                  ? 'Please wait...'
+                  : (hasVerificationId ? 'Confirm Code' : 'Send Code')),
+            ),
           ],
         ),
       ),
