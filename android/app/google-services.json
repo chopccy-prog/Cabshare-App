@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "460990489612",
+    "project_id": "carshare-44205",
+    "storage_bucket": "carshare-44205.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:460990489612:android:af055e6ab6aa8facac7a29",
+        "android_client_info": {
+          "package_name": "com.cabshare.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEjB3fFDA0SklZwpBQh-CXVzgHsG2JWKo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

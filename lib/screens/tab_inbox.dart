@@ -1,88 +1,100 @@
 // lib/screens/tab_inbox.dart
-//
-// This screen shows the user's active conversations and allows them to
-// open a chat when tapping on a conversation.  It fetches the inbox
-// via ApiClient.inbox() passing the current user's UID so the backend
-// can authorize the request.  If the bearer token is set on the
-// ApiClient the uid parameter may not be required, but including it
-// makes the endpoint work in debug mode without authorization headers.
-
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../services/api_client.dart';
-
 class TabInbox extends StatefulWidget {
-  final ApiClient api;
-  const TabInbox({super.key, required this.api});
+  /// Accept (and ignore) api to stay compatible with existing calls:
+  /// TabInbox(api: api)
+  final dynamic api;
+  const TabInbox({super.key, this.api});
 
   @override
   State<TabInbox> createState() => _TabInboxState();
 }
 
 class _TabInboxState extends State<TabInbox> {
-  late Future<List<dynamic>> _inboxFuture;
+  final _client = Supabase.instance.client;
+  final _fmt = DateFormat('dd MMM, hh:mm a');
+
+  bool _loading = true;
   String? _error;
+  List<Map<String, dynamic>> _threads = [];
 
   @override
   void initState() {
     super.initState();
-    _inboxFuture = _loadInbox();
+    _load();
   }
 
-  Future<List<dynamic>> _loadInbox() async {
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final user = Supabase.instance.client.auth.currentUser;
-      final conversations = await widget.api.inbox(uid: user?.id);
-      return conversations;
+      final uid = _client.auth.currentUser!.id;
+
+      final data = await _client
+          .from('v_inbox_threads')
+          .select('*')
+          .or('rider_id.eq.$uid,driver_id.eq.$uid')
+          .order('ride_created_at', ascending: false);
+
+      setState(() => _threads = List<Map<String, dynamic>>.from(data));
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
-      return [];
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<dynamic>>(
-      future: _inboxFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (_error != null) {
-          return Center(
+    return Scaffold(
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? ListView(children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Text(
-              _error!,
+              'Failed to load inbox:\n$_error',
               style: const TextStyle(color: Colors.red),
             ),
-          );
-        }
-        final items = snapshot.data ?? [];
-        if (items.isEmpty) {
-          return const Center(child: Text('No conversations found'));
-        }
-        return ListView.separated(
-          itemCount: items.length,
+          ),
+        ])
+            : _threads.isEmpty
+            ? const Center(child: Text('No conversations yet'))
+            : ListView.separated(
+          itemCount: _threads.length,
           separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final item = items[index] as Map<String, dynamic>;
-            // Expect the backend to return a "ride" with aliases for legacy fields
-            final ride = item['ride'] as Map<String, dynamic>;
-            final fromCity = ride['from_location'] ?? ride['from'];
-            final toCity = ride['to_location'] ?? ride['to'];
-            final title = '$fromCity → $toCity';
+          itemBuilder: (context, i) {
+            final t = _threads[i];
+            final isDriver =
+                t['driver_id'] == _client.auth.currentUser!.id;
+            final otherName = isDriver
+                ? (t['rider_name'] ?? 'Rider')
+                : (t['driver_name'] ?? 'Driver');
+            final when = DateTime.tryParse(t['ride_created_at'] ?? '');
+            final created =
+            when == null ? '' : _fmt.format(when.toLocal());
+
             return ListTile(
-              title: Text(title),
-              subtitle: Text('Messages: ${item['message_count'] ?? 0}'),
+              leading: const Icon(Icons.chat_bubble_outline),
+              title: Text(otherName),
+              subtitle: Text('Ride • $created'),
+              trailing: const Icon(Icons.chevron_right),
               onTap: () {
-                // TODO: Navigate to chat screen with rideId and otherUserId
+                // TODO: push a thread view when you add it
+                // Navigator.pushNamed(context, '/inbox/thread', arguments: t['thread_id']);
               },
             );
           },
-        );
-      },
+        ),
+      ),
     );
   }
 }

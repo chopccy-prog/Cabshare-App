@@ -1,15 +1,5 @@
-// lib/screens/ride_detail.dart
-//
-// Displays detailed information about a specific ride and allows the
-// user to request a booking.  If the ride supports auto-approval,
-// the booking will immediately be confirmed.  Otherwise it will be
-// pending until the driver approves it.  After submitting a booking,
-// the screen shows a snack bar with the result.
-
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../services/api_client.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RideDetail extends StatefulWidget {
   final ApiClient api;
@@ -21,83 +11,138 @@ class RideDetail extends StatefulWidget {
 }
 
 class _RideDetailState extends State<RideDetail> {
-  int _seatsToBook = 1;
-  bool _busy = false;
-  String? _error;
-  String? _success;
+  List<Map<String, dynamic>> _stops = [];
+  String? _fromStopId;
+  String? _toStopId;
+  int _seats = 1;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final stops = await widget.api.getRouteStops(widget.ride['route_id']);
+      setState(() {
+        _stops = stops;
+        if (stops.isNotEmpty) {
+          _fromStopId = stops.first['stop_id'] ?? stops.first['id'];
+          _toStopId = stops.length > 1
+              ? (stops.last['stop_id'] ?? stops.last['id'])
+              : (stops.first['stop_id'] ?? stops.first['id']);
+        }
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _book() async {
+    if (_fromStopId == null || _toStopId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select pickup and drop stops')),
+      );
+      return;
+    }
+
+    try {
+      final uid = await _whoAmI(); // replace with your auth user id getter
+      final pricePerSeat = (widget.ride['price_inr'] ?? 0) as num;
+
+      await widget.api.createBooking(
+        rideId: widget.ride['id'],
+        riderId: uid,
+        fromStopId: _fromStopId!,
+        toStopId: _toStopId!,
+        seats: _seats,
+        pricePerSeatInr: pricePerSeat,
+        depositInr: 0,        // safe default; change if you take deposits
+        autoApprove: false,   // driver can toggle later if you add that
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Booking requested')),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Booking failed: $e')));
+    }
+  }
+
+  Future<String> _whoAmI() async {
+    // TODO: wire your auth. For now expect backend to accept the JWT bearer
+    // and resolve it; or pass Supabase user id if you keep it on client.
+    // If you already store uid in memory, return that here.
+    throw Exception('Implement auth uid provider');
+  }
 
   @override
   Widget build(BuildContext context) {
     final ride = widget.ride;
-    final from = ride['from_location'] ?? ride['from'];
-    final to = ride['to_location'] ?? ride['to'];
-    final date = ride['depart_date'] ?? '';
-    final time = ride['depart_time'] ?? '';
-    final price = ride['price_per_seat_inr'] ?? '';
-    final seatsAvail = ride['seats_available'] ?? ride['seats_total'] ?? 0;
-    final rideType = ride['ride_type'] ?? '';
+    final from = ride['from_city'] ?? ride['from'] ?? 'unknown';
+    final to = ride['to_city'] ?? ride['to'] ?? 'unknown';
+    final start = (ride['start_time'] ?? '').toString().replaceFirst('T', ' ');
+    final price = ride['price_inr'] ?? 0;
+    final seatsLeft = ride['seats_left'] ?? ride['seats_available'] ?? 0;
+    final type = ride['type'] ?? '';
+
     return Scaffold(
       appBar: AppBar(title: const Text('Ride Details')),
-      body: SingleChildScrollView(
+      body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator.adaptive())
+            : ListView(
           children: [
-            Text('$from → $to', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text('Date: $date'),
-            Text('Time: $time'),
-            Text('Price per seat: ₹$price'),
-            Text('Seats available: $seatsAvail'),
-            Text('Type: $rideType'),
-            const SizedBox(height: 24),
-            Text('Select seats to book:'),
-            DropdownButton<int>(
-              value: _seatsToBook,
-              onChanged: (val) => setState(() => _seatsToBook = val ?? 1),
-              items: List.generate(seatsAvail, (i) => i + 1)
-                  .map((n) => DropdownMenuItem(
-                value: n,
-                child: Text(n.toString()),
+            Text('$from → $to', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Date: $start'),
+            Text('Seats available: $seatsLeft'),
+            Text('Type: $type'),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _fromStopId,
+              items: _stops
+                  .map((s) => DropdownMenuItem(
+                value: (s['stop_id'] ?? s['id']).toString(),
+                child: Text(s['stop_name'] ?? s['name'] ?? 'Stop'),
               ))
                   .toList(),
+              onChanged: (v) => setState(() => _fromStopId = v),
+              decoration: const InputDecoration(labelText: 'Pickup stop'),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _toStopId,
+              items: _stops
+                  .map((s) => DropdownMenuItem(
+                value: (s['stop_id'] ?? s['id']).toString(),
+                child: Text(s['stop_name'] ?? s['name'] ?? 'Stop'),
+              ))
+                  .toList(),
+              onChanged: (v) => setState(() => _toStopId = v),
+              decoration: const InputDecoration(labelText: 'Drop stop'),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              value: _seats,
+              items: List.generate(6, (i) => i + 1)
+                  .map((n) => DropdownMenuItem(value: n, child: Text(n.toString())))
+                  .toList(),
+              onChanged: (v) => setState(() => _seats = v ?? 1),
+              decoration: const InputDecoration(labelText: 'Seats'),
             ),
             const SizedBox(height: 16),
-            if (_error != null)
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.red),
-              ),
-            if (_success != null)
-              Text(
-                _success!,
-                style: const TextStyle(color: Colors.green),
-              ),
-            const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _busy ? null : () async {
-                setState(() {
-                  _busy = true;
-                  _error = null;
-                  _success = null;
-                });
-                try {
-                  // Pass uid query parameter as fallback when bearer token is absent
-                  final user = Supabase.instance.client.auth.currentUser;
-                  final booking = await widget.api.requestBooking(
-                    ride['id'] as String,
-                    _seatsToBook,
-                    uid: user?.id,
-                  );
-                  setState(() => _success =
-                  'Booking ${booking['status']} (${booking['seats']} seat${booking['seats'] == 1 ? '' : 's'})');
-                } catch (e) {
-                  setState(() => _error = e.toString());
-                } finally {
-                  setState(() => _busy = false);
-                }
-              },
-              child: const Text('Book Seat'),
+              onPressed: _book,
+              child: Text('Book Seat  •  ₹${price * _seats}'),
             ),
           ],
         ),

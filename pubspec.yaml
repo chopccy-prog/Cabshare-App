@@ -1,26 +1,29 @@
 name: cabshare_app
-description: Cabshare mobile app
-publish_to: "none"
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
 
 environment:
-  sdk: ">=3.5.0 <4.0.0"
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: ">=3.19.0"
 
 dependencies:
   flutter:
     sdk: flutter
+
+  cupertino_icons: ^1.0.6
+  firebase_core: ^3.4.0
   http: ^1.2.2
   supabase_flutter: ^2.10.0
-  intl: ^0.19.0
-  shared_preferences: ^2.3.2
-
+  intl: ^0.20.2
+  shared_preferences: ^2.2.2
+  firebase_auth: ^5.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
-  # If/when you add images, create an assets/ folder and uncomment:
-  # assets:
-  #   - assets/

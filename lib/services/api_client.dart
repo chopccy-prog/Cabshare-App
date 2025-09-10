@@ -1,181 +1,142 @@
 // lib/services/api_client.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ApiClient {
-  final String baseUrl;
-  final http.Client _http = http.Client();
-  String? _authToken;
+  ApiClient({String? base})
+      : base = base ?? const String.fromEnvironment('API_BASE', defaultValue: 'http://10.0.2.2:3000');
 
-  ApiClient({required this.baseUrl});
+  final String base;
 
-  void setAuthToken(String? token) {
-    _authToken = token;
+  String? _bearer;
+  void setAuthToken(String? token) => _bearer = token;
+
+  Map<String, String> _headers() => {
+    'Content-Type': 'application/json',
+    if (_bearer != null) 'Authorization': 'Bearer $_bearer',
+  };
+
+  /// ===== Auth identity (Firebase) =====
+  String? whoAmI() => FirebaseAuth.instance.currentUser?.uid;
+
+  /// ===== Profiles =====
+  Future<Map<String, dynamic>?> getProfile({String? uid}) async {
+    final id = uid ?? whoAmI();
+    if (id == null) return null;
+    final r = await http.get(Uri.parse('$base/profiles?user_id=eq.$id'), headers: _headers());
+    if (r.statusCode >= 400) throw Exception('getProfile: ${r.body}');
+    final list = jsonDecode(r.body) as List;
+    return list.isEmpty ? null : list.first as Map<String, dynamic>;
   }
 
-  Map<String, String> get defaultHeaders {
-    final headers = <String, String>{'Content-Type': 'application/json'};
-    final tok = _authToken;
-    if (tok != null && tok.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $tok';
-    }
-    return headers;
+  Future<Map<String, dynamic>> upsertProfile(Map<String, dynamic> fields, {String? uid}) async {
+    final id = uid ?? whoAmI();
+    if (id == null) throw Exception('Not signed in');
+    final body = {...fields, 'user_id': id};
+    final r = await http.post(
+      Uri.parse('$base/profiles'),
+      headers: _headers()..putIfAbsent('Prefer', () => 'resolution=merge-duplicates,return=representation'),
+      body: jsonEncode([body]),
+    );
+    if (r.statusCode >= 400) throw Exception('upsertProfile: ${r.body}');
+    return (jsonDecode(r.body) as List).first as Map<String, dynamic>;
   }
 
-  // Rides: search
-  Future<List<dynamic>> searchRides({String? from, String? to, String? when, String? type}) async {
-    final qp = <String, String>{};
-    if (from != null && from.isNotEmpty) qp['from'] = from;
-    if (to != null && to.isNotEmpty) qp['to'] = to;
-    if (when != null && when.isNotEmpty) qp['when'] = when;
-    if (type != null && type.isNotEmpty) qp['type'] = type;
-    final uri = Uri.parse('$baseUrl/rides/search').replace(queryParameters: qp.isEmpty ? null : qp);
-    final resp = await _http.get(uri, headers: defaultHeaders);
-    if (resp.statusCode >= 400) {
-      throw Exception('API ${resp.statusCode}: ${resp.body}');
-    }
-    final data = jsonDecode(resp.body);
-    return (data is List) ? data : <dynamic>[];
+  /// ===== Vehicles =====
+  Future<Map<String, dynamic>> addVehicle(Map<String, dynamic> v) async {
+    final uid = whoAmI();
+    if (uid == null) throw Exception('Not signed in');
+    final body = {...v, 'owner_id': uid};
+    final r = await http.post(
+      Uri.parse('$base/vehicles'),
+      headers: _headers()..putIfAbsent('Prefer', () => 'return=representation'),
+      body: jsonEncode([body]),
+    );
+    if (r.statusCode >= 400) throw Exception('addVehicle: ${r.body}');
+    return (jsonDecode(r.body) as List).first;
   }
 
-  // Rides: publish
-  Future<Map<String, dynamic>> publishRide({
-    required String fromLocation,
-    required String toLocation,
-    required String departAt,
-    required int seats,
-    required int pricePerSeatInr,
-    String rideType = 'private_pool',
-    String? carPlate,
-    String? carModel,
+  Future<List<Map<String, dynamic>>> myVehicles() async {
+    final uid = whoAmI();
+    if (uid == null) return [];
+    final r = await http.get(Uri.parse('$base/vehicles?owner_id=eq.$uid'), headers: _headers());
+    if (r.statusCode >= 400) throw Exception('myVehicles: ${r.body}');
+    return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
+  }
+
+  /// ===== Rides (reads view) =====
+  Future<List<Map<String, dynamic>>> searchRides({
+    required String fromCity,
+    required String toCity,
+    DateTime? fromDate,
   }) async {
-    final body = <String, dynamic>{
-      'from_location': fromLocation,
-      'to_location': toLocation,
-      'depart_at': departAt,
-      'seats_total': seats,
-      'price_per_seat_inr': pricePerSeatInr,
-      'ride_type': rideType,
-    };
-    if (carPlate != null) body['car_plate'] = carPlate;
-    if (carModel != null) body['car_model'] = carModel;
-    final uri = Uri.parse('$baseUrl/rides');
-    final resp = await _http.post(uri, headers: defaultHeaders, body: jsonEncode(body));
-    if (resp.statusCode >= 400) {
-      throw Exception('API ${resp.statusCode}: ${resp.body}');
-    }
-    return jsonDecode(resp.body) as Map<String, dynamic>;
+    final qp = <String>[
+      'from_city=eq.${Uri.encodeComponent(fromCity)}',
+      'to_city=eq.${Uri.encodeComponent(toCity)}',
+      if (fromDate != null) 'departure_at=gte.${fromDate.toIso8601String()}',
+      'status=eq.published',
+      'order=departure_at.asc',
+    ].join('&');
+    final r = await http.get(Uri.parse('$base/v_rides_list?$qp'), headers: _headers());
+    if (r.statusCode >= 400) throw Exception('searchRides: ${r.body}');
+    return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
   }
 
-  // Rides: get one
-  Future<Map<String, dynamic>> getRide(String rideId) async {
-    final resp = await _http.get(Uri.parse('$baseUrl/rides/$rideId'), headers: defaultHeaders);
-    if (resp.statusCode >= 400) {
-      throw Exception('API ${resp.statusCode}: ${resp.body}');
-    }
-    return jsonDecode(resp.body) as Map<String, dynamic>;
+  Future<List<Map<String, dynamic>>> myPublishedRides() async {
+    final uid = whoAmI();
+    if (uid == null) return [];
+    final qp = 'driver_id=eq.$uid&status=eq.published&order=departure_at.desc';
+    final r = await http.get(Uri.parse('$base/v_rides_list?$qp'), headers: _headers());
+    if (r.statusCode >= 400) throw Exception('myPublishedRides: ${r.body}');
+    return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
   }
 
-  // Bookings: request
-  Future<Map<String, dynamic>> requestBooking(
-      String rideId,
-      int seats, {
-        String? uid,
-        String? pickupStopId,
-        String? dropStopId,
-      }) async {
-    final qp = <String, String>{};
-    if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
-    final uri = Uri.parse('$baseUrl/bookings').replace(queryParameters: qp.isEmpty ? null : qp);
-    final body = <String, dynamic>{
+  /// ===== Bookings =====
+  Future<Map<String, dynamic>> createBooking({
+    required String rideId,
+    required String fromStopId,
+    required String toStopId,
+    required int seats,
+    bool autoApprove = false,
+    int? pricePerSeatInr,
+    int? depositInr,
+  }) async {
+    final uid = whoAmI();
+    if (uid == null) throw Exception('Not signed in');
+
+    final perSeat = pricePerSeatInr ?? 0;
+    final dep = depositInr ?? 0;
+    final total = perSeat * seats;
+
+    final payload = {
       'ride_id': rideId,
-      'seats_requested': seats,
+      'rider_id': uid,
+      'from_stop_id': fromStopId,
+      'to_stop_id': toStopId,
+      'seats_booked': seats,
+      'fare_total_inr': total,
+      'deposit_inr': dep,
+      'status': autoApprove ? 'confirmed' : 'pending',
     };
-    if (pickupStopId != null) body['pickup_stop_id'] = pickupStopId;
-    if (dropStopId != null) body['drop_stop_id'] = dropStopId;
-    final resp = await _http.post(uri, headers: defaultHeaders, body: jsonEncode(body));
-    if (resp.statusCode >= 400) {
-      throw Exception('API ${resp.statusCode}: ${resp.body}');
-    }
-    return jsonDecode(resp.body) as Map<String, dynamic>;
+
+    final r = await http.post(
+      Uri.parse('$base/bookings'),
+      headers: _headers()..putIfAbsent('Prefer', () => 'return=representation'),
+      body: jsonEncode([payload]),
+    );
+    if (r.statusCode >= 400) throw Exception('createBooking: ${r.body}');
+    return (jsonDecode(r.body) as List).first;
   }
 
-  // Routes: list and stops
-  Future<List<dynamic>> getRoutes({String? from, String? to}) async {
-    final qp = <String, String>{};
-    if (from != null && from.isNotEmpty) qp['from'] = from;
-    if (to != null && to.isNotEmpty) qp['to'] = to;
-    final uri = Uri.parse('$baseUrl/routes').replace(queryParameters: qp.isEmpty ? null : qp);
-    final resp = await _http.get(uri, headers: defaultHeaders);
-    if (resp.statusCode >= 400) throw Exception('API ${resp.statusCode}: ${resp.body}');
-    final data = jsonDecode(resp.body);
-    return (data is List) ? data : <dynamic>[];
-  }
-
-  Future<List<dynamic>> getRouteStops(String routeId) async {
-    final uri = Uri.parse('$baseUrl/routes/$routeId/stops');
-    final resp = await _http.get(uri, headers: defaultHeaders);
-    if (resp.statusCode >= 400) throw Exception('API ${resp.statusCode}: ${resp.body}');
-    final data = jsonDecode(resp.body);
-    return (data is List) ? data : <dynamic>[];
-  }
-
-  // Rides: my rides
-  Future<List<dynamic>> myRides({String role = 'driver', String? uid}) async {
-    final qp = <String, String>{'role': role};
-    if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
-    final uri = Uri.parse('$baseUrl/rides/mine').replace(queryParameters: qp);
-    final resp = await _http.get(uri, headers: defaultHeaders);
-    if (resp.statusCode >= 400) throw Exception('API ${resp.statusCode}: ${resp.body}');
-    final data = jsonDecode(resp.body);
-    return (data is List) ? data : <dynamic>[];
-  }
-
-  // Bookings: inbox
-  Future<List<dynamic>> inbox({String? uid}) async {
-    final qp = <String, String>{};
-    if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
-    final uri = Uri.parse('$baseUrl/bookings/inbox').replace(queryParameters: qp.isEmpty ? null : qp);
-    final resp = await _http.get(uri, headers: defaultHeaders);
-    if (resp.statusCode >= 400) throw Exception('API ${resp.statusCode}: ${resp.body}');
-    final data = jsonDecode(resp.body);
-    return (data is List) ? data : <dynamic>[];
-  }
-
-  // Profiles: get and update
-  Future<Map<String, dynamic>> getProfile({String? uid}) async {
-    final qp = <String, String>{};
-    if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
-    final uri = Uri.parse('$baseUrl/profiles/me').replace(queryParameters: qp.isEmpty ? null : qp);
-    final resp = await _http.get(uri, headers: defaultHeaders);
-    if (resp.statusCode >= 400) throw Exception('API ${resp.statusCode}: ${resp.body}');
-    return jsonDecode(resp.body) as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> fields, {String? uid}) async {
-    final qp = <String, String>{};
-    if (uid != null && uid.isNotEmpty) qp['uid'] = uid;
-    final uri = Uri.parse('$baseUrl/profiles/me').replace(queryParameters: qp.isEmpty ? null : qp);
-    final resp = await _http.put(uri, headers: defaultHeaders, body: jsonEncode(fields));
-    if (resp.statusCode >= 400) throw Exception('API ${resp.statusCode}: ${resp.body}');
-    return jsonDecode(resp.body) as Map<String, dynamic>;
-  }
-
-  // Messages (optional)
-  Future<List<dynamic>> messages(String rideId, String otherUserId) async {
-    final uri = Uri.parse('$baseUrl/messages')
-        .replace(queryParameters: {'ride_id': rideId, 'other_user_id': otherUserId});
-    final resp = await _http.get(uri, headers: defaultHeaders);
-    if (resp.statusCode >= 400) throw Exception('API ${resp.statusCode}: ${resp.body}');
-    final data = jsonDecode(resp.body);
-    return (data is List) ? data : <dynamic>[];
-  }
-
-  Future<Map<String, dynamic>> sendMessage(String rideId, String recipientId, String text) async {
-    final body = {'ride_id': rideId, 'recipient_id': recipientId, 'body': text};
-    final uri = Uri.parse('$baseUrl/messages');
-    final resp = await _http.post(uri, headers: defaultHeaders, body: jsonEncode(body));
-    if (resp.statusCode >= 400) throw Exception('API ${resp.statusCode}: ${resp.body}');
-    return jsonDecode(resp.body) as Map<String, dynamic>;
+  Future<List<Map<String, dynamic>>> myBookings() async {
+    final uid = whoAmI();
+    if (uid == null) return [];
+    final r = await http.get(
+      Uri.parse('$base/bookings?select=*,rides!inner(*)&rider_id=eq.$uid&order=created_at.desc'),
+      headers: _headers(),
+    );
+    if (r.statusCode >= 400) throw Exception('myBookings: ${r.body}');
+    return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
   }
 }

@@ -1,11 +1,11 @@
 // lib/screens/home_shell.dart
 //
-// Revised home shell that accepts an [ApiClient] from the parent
-// (typically main.dart) rather than constructing its own.  This
-// ensures all tabs share the same API instance and bearer token.
+// Home shell that accepts an [ApiClient] from the parent (main.dart)
+// so all tabs share the same API instance and bearer token.
 
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+
 import 'tab_search.dart';
 import 'tab_publish.dart';
 import 'tab_my_rides.dart';
@@ -26,16 +26,17 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final api = widget.api;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Cabshare')),
       body: IndexedStack(
         index: _idx,
-        children: [
+        children: <Widget>[
           TabSearch(api: api),
           TabPublish(api: api),
           TabMyRides(api: api),
-          TabInbox(api: api),
-          TabProfile(api: api),
+          const TabInbox(),   // <- updated: no api param
+          const TabProfile(), // <- updated: no api param
         ],
       ),
       bottomNavigationBar: NavigationBar(

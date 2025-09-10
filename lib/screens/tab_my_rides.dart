@@ -1,16 +1,6 @@
 // lib/screens/tab_my_rides.dart
-//
-// Displays rides created by the current user (driver role) and rides they
-// have booked (rider role).  Uses the ApiClient to fetch rides and
-// passes the current user's UID as a query parameter so the backend
-// can properly filter and authorize requests.  The UI toggles
-// between "Published" and "Booked" via a SegmentedButton.
-
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../services/api_client.dart';
-import 'ride_detail.dart';
 
 class TabMyRides extends StatefulWidget {
   final ApiClient api;
@@ -20,100 +10,79 @@ class TabMyRides extends StatefulWidget {
   State<TabMyRides> createState() => _TabMyRidesState();
 }
 
-class _TabMyRidesState extends State<TabMyRides> {
-  bool _showPublished = true;
-  bool _loading = true;
-  String? _error;
-  List<dynamic> _published = [];
-  List<dynamic> _booked = [];
-
+class _TabMyRidesState extends State<TabMyRides> with AutomaticKeepAliveClientMixin {
   @override
-  void initState() {
-    super.initState();
-    _refreshRides();
-  }
+  bool get wantKeepAlive => true;
 
-  Future<void> _refreshRides() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      final published = await widget.api.myRides(role: 'driver', uid: userId);
-      final booked = await widget.api.myRides(role: 'rider', uid: userId);
-      setState(() {
-        _published = published;
-        _booked = booked;
-      });
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
+  Future<List<Map<String, dynamic>>> _loadPublished() => widget.api.myPublishedRides();
+  Future<List<Map<String, dynamic>>> _loadBooked()    => widget.api.myBookings();
 
   @override
   Widget build(BuildContext context) {
-    final rides = _showPublished ? _published : _booked;
-    return Column(
-      children: [
-        const SizedBox(height: 12),
-        SegmentedButton<bool>(
-          segments: const [
-            ButtonSegment(value: true, label: Text('Published')),
-            ButtonSegment(value: false, label: Text('Booked')),
-          ],
-          selected: {_showPublished},
-          onSelectionChanged: (s) => setState(() => _showPublished = s.first),
+    super.build(context);
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Cabshare'),
+          bottom: const TabBar(tabs: [
+            Tab(text: 'Published'),
+            Tab(text: 'Booked'),
+          ]),
         ),
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-              ? Center(
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.red),
-            ),
-          )
-              : rides.isEmpty
-              ? const Center(child: Text('No rides found'))
-              : ListView.separated(
-            itemCount: rides.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final ride = rides[index] as Map<String, dynamic>;
-              final fromCity = ride['from_location'] ?? ride['from'];
-              final toCity = ride['to_location'] ?? ride['to'];
-              final date = ride['depart_date'] ?? '';
-              final time = ride['depart_time'] ?? '';
-              final seats = ride['seats_total'] ?? ride['seats'] ?? '';
-              final status = ride['status'] ?? '';
-              return ListTile(
-                title: Text('$fromCity → $toCity'),
-                subtitle: Text('$date $time | $status | Seats: $seats'),
-                onTap: () {
-                  // Navigate to ride detail for published or booked ride
-                  Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => RideDetail(
-                      api: widget.api,
-                      ride: ride as Map<String, dynamic>,
-                    ),
-                  ));
-                },
-              );
-            },
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: ElevatedButton(
-            onPressed: _refreshRides,
-            child: const Text('Refresh'),
-          ),
-        ),
-      ],
+        body: TabBarView(children: [
+          _ListFuture(future: _loadPublished(), render: _rideTile),
+          _ListFuture(future: _loadBooked(), render: _bookingTile),
+        ]),
+      ),
+    );
+  }
+
+  Widget _rideTile(Map<String, dynamic> r) {
+    final dt = DateTime.tryParse(r['departure_at'] ?? '')?.toLocal();
+    final when = dt == null ? '' : '${dt.year}-${dt.month.toString().padLeft(2,'0')}-${dt.day.toString().padLeft(2,'0')} ${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}';
+    return ListTile(
+      title: Text('${r['from_city']} → ${r['to_city']}'),
+      subtitle: Text('$when | ${r['status']} | Seats: ${r['seats_available']}'),
+    );
+  }
+
+  Widget _bookingTile(Map<String, dynamic> b) {
+    final ride = b['rides'] ?? {};
+    final dt = DateTime.tryParse(ride['departure_time'] ?? ride['departure_at'] ?? '')?.toLocal();
+    final when = dt == null ? '' : '${dt.year}-${dt.month.toString().padLeft(2,'0')}-${dt.day.toString().padLeft(2,'0')}';
+    return ListTile(
+      title: Text('${ride['route_id'] ?? ''} • ${b['status']}'),
+      subtitle: Text('Seats: ${b['seats_booked'] ?? 0} • On $when'),
+      trailing: Text('₹${b['fare_total_inr'] ?? 0}'),
+    );
+  }
+}
+
+class _ListFuture extends StatelessWidget {
+  final Future<List<Map<String, dynamic>>> future;
+  final Widget Function(Map<String, dynamic>) render;
+  const _ListFuture({required this.future, required this.render});
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (c, snap) {
+        if (snap.hasError) {
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Failed to load: ${snap.error}', style: const TextStyle(color: Colors.red)),
+          ));
+        }
+        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+        final data = snap.data!;
+        if (data.isEmpty) return const Center(child: Text('No items yet'));
+        return ListView.separated(
+          itemCount: data.length,
+          separatorBuilder: (_, __) => const Divider(height: 0),
+          itemBuilder: (_, i) => render(data[i]),
+        );
+      },
     );
   }
 }
