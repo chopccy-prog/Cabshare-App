@@ -1,6 +1,7 @@
 // lib/screens/tab_publish.dart
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+import '../data/cities.dart';
 
 class TabPublish extends StatefulWidget {
   final ApiClient api;
@@ -11,11 +12,6 @@ class TabPublish extends StatefulWidget {
 }
 
 class _TabPublishState extends State<TabPublish> {
-  static const _cities = <String>[
-    'Bengaluru', 'Hyderabad', 'Chennai', 'Pune', 'Mumbai', 'Delhi', 'Gurugram',
-    'Noida', 'Kolkata', 'Ahmedabad'
-  ];
-
   String? _fromCity;
   String? _toCity;
   DateTime? _date;
@@ -65,7 +61,6 @@ class _TabPublishState extends State<TabPublish> {
       );
       return;
     }
-
     final seats = int.tryParse(_seatsCtrl.text.trim());
     final price = int.tryParse(_priceCtrl.text.trim());
     if (seats == null || seats <= 0 || price == null || price <= 0) {
@@ -75,13 +70,9 @@ class _TabPublishState extends State<TabPublish> {
       return;
     }
 
-    // Merge date + time to ISO string
+    // Merge to ISO (backend accepts either Z or local; we’ll send local ISO)
     final dt = DateTime(
-      _date!.year,
-      _date!.month,
-      _date!.day,
-      _time!.hour,
-      _time!.minute,
+      _date!.year, _date!.month, _date!.day, _time!.hour, _time!.minute,
     ).toIso8601String();
 
     setState(() => _submitting = true);
@@ -99,6 +90,7 @@ class _TabPublishState extends State<TabPublish> {
         const SnackBar(content: Text('Ride published!')),
       );
     } catch (e) {
+      // Surface server error so we know exactly why a 400 happens
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Publish failed: $e')),
       );
@@ -116,7 +108,7 @@ class _TabPublishState extends State<TabPublish> {
       value: value,
       isExpanded: true,
       decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
-      items: _cities.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+      items: kCities.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
       onChanged: onChanged,
     );
   }
@@ -147,7 +139,6 @@ class _TabPublishState extends State<TabPublish> {
         : "${_date!.year.toString().padLeft(4, '0')}-"
         "${_date!.month.toString().padLeft(2, '0')}-"
         "${_date!.day.toString().padLeft(2, '0')}";
-
     final timeText = _time == null
         ? ''
         : "${_time!.hour.toString().padLeft(2, '0')}:${_time!.minute.toString().padLeft(2, '0')}";
@@ -157,17 +148,9 @@ class _TabPublishState extends State<TabPublish> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _cityPicker(
-            label: 'From city',
-            value: _fromCity,
-            onChanged: (v) => setState(() => _fromCity = v),
-          ),
+          _cityPicker(label: 'From city', value: _fromCity, onChanged: (v) => setState(() => _fromCity = v)),
           const SizedBox(height: 12),
-          _cityPicker(
-            label: 'To city',
-            value: _toCity,
-            onChanged: (v) => setState(() => _toCity = v),
-          ),
+          _cityPicker(label: 'To city', value: _toCity, onChanged: (v) => setState(() => _toCity = v)),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -178,10 +161,7 @@ class _TabPublishState extends State<TabPublish> {
                     labelText: 'Date',
                     hintText: 'Tap to pick',
                     border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.calendar_month),
-                      onPressed: _pickDate,
-                    ),
+                    suffixIcon: IconButton(icon: const Icon(Icons.calendar_month), onPressed: _pickDate),
                   ),
                   controller: TextEditingController(text: dateText),
                   onTap: _pickDate,
@@ -195,10 +175,7 @@ class _TabPublishState extends State<TabPublish> {
                     labelText: 'Time',
                     hintText: 'Tap to pick',
                     border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.access_time),
-                      onPressed: _pickTime,
-                    ),
+                    suffixIcon: IconButton(icon: const Icon(Icons.access_time), onPressed: _pickTime),
                   ),
                   controller: TextEditingController(text: timeText),
                   onTap: _pickTime,
@@ -212,19 +189,13 @@ class _TabPublishState extends State<TabPublish> {
           TextField(
             controller: _seatsCtrl,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Seats',
-              border: OutlineInputBorder(),
-            ),
+            decoration: const InputDecoration(labelText: 'Seats', border: OutlineInputBorder()),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _priceCtrl,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Price per seat (₹)',
-              border: OutlineInputBorder(),
-            ),
+            decoration: const InputDecoration(labelText: 'Price per seat (₹)', border: OutlineInputBorder()),
           ),
           const SizedBox(height: 16),
           FilledButton(
