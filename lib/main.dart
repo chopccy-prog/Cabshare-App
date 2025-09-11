@@ -1,95 +1,97 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
-import 'package:supabase_flutter/supabase_flutter.dart' as supa;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'services/api_client.dart';
+import 'services/auth_service.dart';
+
 import 'screens/login_page.dart';
 import 'screens/home_shell.dart';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1) Firebase (for phone auth)
-  await Firebase.initializeApp();
-
-  // 2) Supabase (for backend auth/session if you need it)
-  await supa.Supabase.initialize(
+  // Supabase (values come from --dart-define)
+  await Supabase.initialize(
     url: const String.fromEnvironment('SUPABASE_URL'),
     anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
     debug: true,
   );
+
+  // Firebase (for phone OTP)
+  await Firebase.initializeApp();
+
+  // Start unified listeners (your existing service)
+  AuthService().initListenersOnce();
 
   runApp(const CabshareApp());
 }
 
 class CabshareApp extends StatefulWidget {
   const CabshareApp({super.key});
+
   @override
   State<CabshareApp> createState() => _CabshareAppState();
 }
 
 class _CabshareAppState extends State<CabshareApp> {
-  late final ApiClient _apiClient;
+  late final ApiClient _api;
+  fb.User? _fbUser; // Firebase user (if linked)
 
-  fb.User? _fbUser;                 // Firebase
-  supa.Session? _sbSession;         // Supabase
+  bool get _isSignedIn {
+    final sbSession = Supabase.instance.client.auth.currentSession;
+    return _fbUser != null || sbSession != null;
+  }
 
   @override
   void initState() {
     super.initState();
 
-    _apiClient = ApiClient(
-      baseUrl: const String.fromEnvironment('API_BASE'),
-    );
+    // Single shared ApiClient for the whole app
+    _api = ApiClient(baseUrl: const String.fromEnvironment('API_BASE'));
 
-    // Seed initial state
+    // Seed tokens from current states
     _fbUser = fb.FirebaseAuth.instance.currentUser;
-    _sbSession = supa.Supabase.instance.client.auth.currentSession;
+    _seedApiFromSupabase(Supabase.instance.client.auth.currentSession);
+    _seedApiFromFirebase(_fbUser);
 
-    // Prefer Firebase ID token for backend bearer if present
-    _updateBearerFromFirebase(_fbUser);
-    // Fallback to Supabase access token if present
-    _updateBearerFromSupabase(_sbSession);
-
-    // Listen for Firebase token / user changes
+    // Listen to Firebase token/user changes
     fb.FirebaseAuth.instance.idTokenChanges().listen((user) async {
       _fbUser = user;
-      await _updateBearerFromFirebase(user);
-      setState(() {});
+      await _seedApiFromFirebase(user);
+      if (mounted) setState(() {});
     });
 
-    // Listen for Supabase auth changes (optional)
-    supa.Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
-      _sbSession = event.session;
-      _updateBearerFromSupabase(event.session);
-      setState(() {});
+    // Listen to Supabase auth changes
+    Supabase.instance.client.auth.onAuthStateChange.listen((event) async {
+      final session = event.session;
+      _seedApiFromSupabase(session);
+      if (mounted) setState(() {});
     });
   }
 
-  Future<void> _updateBearerFromFirebase(fb.User? user) async {
-    final idToken = await user?.getIdToken();
-    if (idToken != null && idToken.isNotEmpty) {
-      _apiClient.setAuthToken(idToken);
-    }
-  }
-
-  void _updateBearerFromSupabase(supa.Session? session) {
+  // Prefer Supabase access token for our backend Bearer
+  void _seedApiFromSupabase(Session? session) {
     final token = session?.accessToken;
-    if (token != null && token.isNotEmpty) {
-      _apiClient.setAuthToken(token);
-    }
+    _api.setAuthToken((token != null && token.isNotEmpty) ? token : null);
+  }
+
+  // If you also want to support Firebase-only flows later,
+  // you can forward Firebase ID token to backend (if your backend accepts it).
+  Future<void> _seedApiFromFirebase(fb.User? user) async {
+    // Currently we keep Supabase token as primary.
+    // If you want to use Firebase token instead, uncomment below:
+    // final idTok = await user?.getIdToken();
+    // if (idTok != null && idTok.isNotEmpty) _api.setAuthToken(idTok);
   }
 
   @override
   Widget build(BuildContext context) {
-    final signedIn = _fbUser != null || _sbSession != null;
     return MaterialApp(
       title: 'Cabshare',
       theme: ThemeData(useMaterial3: true),
-      home: signedIn
-          ? HomeShell(api: _apiClient)
-          : LoginPage(api: _apiClient),
+      home: _isSignedIn ? HomeShell(api: _api) : LoginPage(api: _api),
     );
   }
 }

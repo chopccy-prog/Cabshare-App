@@ -10,25 +10,30 @@ class LoginPhone extends StatefulWidget {
 
 class _LoginPhoneState extends State<LoginPhone> {
   final _phoneCtrl = TextEditingController();
-  final _codeCtrl = TextEditingController();
+  final _otpCtrl = TextEditingController();
   String? _verificationId;
   bool _sending = false;
 
   @override
   void dispose() {
     _phoneCtrl.dispose();
-    _codeCtrl.dispose();
+    _otpCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _sendCode() async {
     setState(() => _sending = true);
     try {
-      final vId = await AuthService().startPhoneVerification(_phoneCtrl.text.trim());
-      setState(() => _verificationId = vId);
+      final id = await AuthService().startPhoneVerification(_phoneCtrl.text.trim());
+      setState(() => _verificationId = id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Code sent')),
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Verification failed: $e')),
+        SnackBar(content: Text('Failed: $e')),
       );
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -36,15 +41,21 @@ class _LoginPhoneState extends State<LoginPhone> {
   }
 
   Future<void> _confirm() async {
-    final vId = _verificationId;
-    if (vId == null) return;
+    if (_verificationId == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Send code first')));
+      return;
+    }
     setState(() => _sending = true);
     try {
-      await AuthService().confirmSmsCode(vId, _codeCtrl.text.trim());
+      await AuthService().confirmSmsCode(
+        verificationId: _verificationId!,
+        smsCode: _otpCtrl.text.trim(),
+      );
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Confirm failed: $e')),
+        SnackBar(content: Text('Verify failed: $e')),
       );
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -53,33 +64,38 @@ class _LoginPhoneState extends State<LoginPhone> {
 
   @override
   Widget build(BuildContext context) {
-    final hasVerificationId = _verificationId != null;
-
+    final haveCode = _verificationId != null;
     return Scaffold(
-      appBar: AppBar(title: const Text('Phone Login')),
+      appBar: AppBar(title: const Text('Sign in with phone')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            TextField(
-              controller: _phoneCtrl,
-              decoration: const InputDecoration(labelText: 'Phone (+91...)'),
-              keyboardType: TextInputType.phone,
-            ),
-            const SizedBox(height: 12),
-            if (hasVerificationId)
+            if (!haveCode) ...[
               TextField(
-                controller: _codeCtrl,
-                decoration: const InputDecoration(labelText: 'OTP Code'),
+                controller: _phoneCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Phone (+91… E.164)',
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: _sending ? null : _sendCode,
+                child: Text(_sending ? 'Sending…' : 'Send code'),
+              ),
+            ] else ...[
+              TextField(
+                controller: _otpCtrl,
+                decoration: const InputDecoration(labelText: 'OTP'),
                 keyboardType: TextInputType.number,
               ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _sending ? null : (hasVerificationId ? _confirm : _sendCode),
-              child: Text(_sending
-                  ? 'Please wait...'
-                  : (hasVerificationId ? 'Confirm Code' : 'Send Code')),
-            ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: _sending ? null : _confirm,
+                child: Text(_sending ? 'Verifying…' : 'Verify'),
+              ),
+            ],
           ],
         ),
       ),

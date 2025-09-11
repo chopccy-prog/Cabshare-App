@@ -317,5 +317,45 @@ class ApiClient {
     }
     return jsonDecode(resp.body) as Map<String, dynamic>;
   }
+  // --- Wallet (best-effort; optional backend) ---
+  Future<int> getWalletBalance() async {
+    try {
+      final r = await _http.get(Uri.parse('$baseUrl/wallet/balance'), headers: defaultHeaders);
+      if (r.statusCode >= 400) throw Exception(r.body);
+      final m = (jsonDecode(r.body) as Map<String, dynamic>);
+      return (m['balance_inr'] ?? 0) as int;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getTransactions() async {
+    try {
+      final r = await _http.get(Uri.parse('$baseUrl/wallet/transactions'), headers: defaultHeaders);
+      if (r.statusCode >= 400) throw Exception(r.body);
+      return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> createTopUpIntent(int amountInr) async {
+    final r = await _http.post(
+      Uri.parse('$baseUrl/wallet/topup'),
+      headers: defaultHeaders,
+      body: jsonEncode({'amount_inr': amountInr}),
+    );
+    if (r.statusCode >= 400) throw Exception(r.body);
+  }
+
+  Future<void> requestPayout(int amountInr) async {
+    final r = await _http.post(
+      Uri.parse('$baseUrl/wallet/payout'),
+      headers: defaultHeaders,
+      body: jsonEncode({'amount_inr': amountInr}),
+    );
+    if (r.statusCode >= 400) throw Exception(r.body);
+  }
+
 }
 
