@@ -1,3 +1,10 @@
+// lib/core/api.dart
+// This file now redirects to the proper ApiClient for compatibility
+
+import '../services/api_client.dart';
+export '../services/api_client.dart';
+
+// Legacy Ride class for backward compatibility
 class Ride {
   final String id;
   final String from;
@@ -27,41 +34,36 @@ class Ride {
 
   factory Ride.fromJson(Map<String, dynamic> j) => Ride(
     id: j['id'].toString(),
-    from: j['from'],
-    to: j['to'],
-    when: DateTime.parse(j['when']),
-    price: j['price'],
-    spots: j['spots'],
+    from: j['from'] ?? j['from_location'] ?? '',
+    to: j['to'] ?? j['to_location'] ?? '',
+    when: DateTime.tryParse(j['when'] ?? j['depart_at'] ?? '') ?? DateTime.now(),
+    price: j['price'] ?? j['price_per_seat_inr'] ?? 0,
+    spots: j['spots'] ?? j['seats_available'] ?? 0,
     cashbackPct: j['cashback_pct'],
   );
 }
 
+// Legacy Api class - now uses ApiClient internally
 class Api {
   static const baseUrl = String.fromEnvironment('API_BASE_URL',
-      defaultValue: 'http://192.168.1.7:5000');
+      defaultValue: 'http://10.0.2.2:3000');
+  
+  static final _client = ApiClient(baseUrl: baseUrl);
 
   static Future<List<Ride>> searchRides({
     required String from,
     required String to,
     DateTime? date,
   }) async {
-    // GET /rides?from=&to=&date=YYYY-MM-DD
-    final uri = Uri.parse('$baseUrl/rides').replace(queryParameters: {
-      if (from.isNotEmpty) 'from': from,
-      if (to.isNotEmpty) 'to': to,
-      if (date != null) 'date': date.toIso8601String().substring(0, 10),
-    });
-    final res = await httpGet(uri);
-    final data = res as List;
-    return data.map((e) => Ride.fromJson(e as Map<String, dynamic>)).toList();
+    final results = await _client.searchRides(
+      from: from,
+      to: to,
+      fromDate: date,
+    );
+    return results.map((e) => Ride.fromJson(e)).toList();
   }
 
-  static Future<void> bookRide(String rideId) async {
-    final uri = Uri.parse('$baseUrl/rides/$rideId/book');
-    await httpPost(uri, body: const {});
+  static Future<void> bookRide(String rideId, {int seats = 1}) async {
+    await _client.requestBooking(rideId, seats);
   }
-
-  // You already have these two helpers in your earlier setup, or similar
-  static Future<dynamic> httpGet(Uri uri) async { /* ... */ }
-  static Future<dynamic> httpPost(Uri uri, {Object? body}) async { /* ... */ }
 }

@@ -1,111 +1,263 @@
-// lib/services/profile_repo.dart
+// lib/services/profile_repo.dart - Profile Repository Service
+import 'dart:convert';
 import 'dart:typed_data';
-import 'package:supabase_flutter/supabase_flutter.dart' as sb;
+import 'package:http/http.dart' as http;
+import '../config.dart';
+import '../services/auth_service.dart';
 
-/// Tables expected (you already have these or similar):
-/// - profiles:      user_id (pk/uuid), full_name text, phone text, email text, kyc_status text
-/// - vehicles:      id bigserial, owner_id uuid, plate text, model text, color text?
-/// - kyc_documents: id bigserial, user_id uuid, doc_type text, storage_path text, status text, created_at timestamptz default now()
-///
-/// Storage bucket expected:
-/// - kyc (public=false)
 class ProfileRepo {
-  final _supabase = sb.Supabase.instance.client;
+  static String get _baseUrl => '${Config.apiBaseUrl}/api/profile';
+  final AuthService _authService = AuthService();
 
-  String? get _uid => _supabase.auth.currentUser?.id;
-
+  // Get user profile
   Future<Map<String, dynamic>?> getMyProfile() async {
-    final uid = _uid;
-    if (uid == null) return null;
-    final rows = await _supabase
-        .from('profiles')
-        .select()
-        .eq('user_id', uid)
-        .limit(1);
-    if (rows.isEmpty) return null;
-    return rows.first as Map<String, dynamic>;
+    try {
+      final token = await _authService.getToken();
+      final response = await http.get(
+        Uri.parse('$_baseUrl/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success']) {
+          return data['profile'];
+        }
+      }
+      return null;
+    } catch (e) {
+      throw Exception('Error fetching profile: $e');
+    }
   }
 
-  Future<Map<String, dynamic>> upsertMyProfile({
-    String? fullName,
+  // Update/Insert profile
+  Future<Map<String, dynamic>?> upsertMyProfile({
+    required String fullName,
     String? phone,
     String? email,
-    String? kycStatus,
   }) async {
-    final uid = _uid;
-    if (uid == null) throw Exception('Not signed in');
-    final payload = <String, dynamic>{
-      'user_id': uid,
-      if (fullName != null) 'full_name': fullName,
-      if (phone != null) 'phone': phone,
-      if (email != null) 'email': email,
-      if (kycStatus != null) 'kyc_status': kycStatus,
-    };
-    final res = await _supabase.from('profiles').upsert(payload).select().limit(1);
-    return (res as List).first as Map<String, dynamic>;
+    try {
+      final token = await _authService.getToken();
+      final response = await http.post(
+        Uri.parse('$_baseUrl/update'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'full_name': fullName,
+          'phone': phone,
+          'email': email,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success']) {
+          return data['profile'];
+        }
+      }
+      return null;
+    } catch (e) {
+      throw Exception('Error updating profile: $e');
+    }
   }
 
-  // ---------------- Vehicles ----------------
+  // Get user vehicles
   Future<List<Map<String, dynamic>>> myVehicles() async {
-    final uid = _uid;
-    if (uid == null) return [];
-    final rows = await _supabase
-        .from('vehicles')
-        .select()
-        .eq('owner_id', uid)
-        .order('id', ascending: false);
-    return (rows as List).cast<Map<String, dynamic>>();
+    try {
+      final token = await _authService.getToken();
+      final response = await http.get(
+        Uri.parse('$_baseUrl/vehicles'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success']) {
+          return List<Map<String, dynamic>>.from(data['vehicles'] ?? []);
+        }
+      }
+      return [];
+    } catch (e) {
+      throw Exception('Error fetching vehicles: $e');
+    }
   }
 
-  Future<Map<String, dynamic>> addVehicle({
-    required String plate,
-    required String model,
-    String? color,
-  }) async {
-    final uid = _uid;
-    if (uid == null) throw Exception('Not signed in');
-    final rows = await _supabase.from('vehicles').insert({
-      'owner_id': uid,
-      'plate': plate,
-      'model': model,
-      if (color != null && color.isNotEmpty) 'color': color,
-    }).select();
-    return (rows as List).first as Map<String, dynamic>;
-  }
-
-  Future<void> deleteVehicle(int id) async {
-    await _supabase.from('vehicles').delete().eq('id', id);
-  }
-
-  // ---------------- KYC Documents ----------------
-  /// Upload bytes to storage (bucket `kyc`) and create a row in `kyc_documents`.
-  /// Returns the DB row.
-  Future<Map<String, dynamic>> uploadKycDocument({
-    required String docType, // e.g. 'id_proof','driver_license','vehicle_rc'
-    required Uint8List bytes,
-    required String filename, // with extension
-  }) async {
-    final uid = _uid;
-    if (uid == null) throw Exception('Not signed in');
-    final path = '$uid/$docType/$filename';
-    await _supabase.storage.from('kyc').uploadBinary(path, bytes, fileOptions: const sb.FileOptions(upsert: true));
-    final rows = await _supabase.from('kyc_documents').insert({
-      'user_id': uid,
-      'doc_type': docType,
-      'storage_path': path,
-      'status': 'pending',
-    }).select();
-    return (rows as List).first as Map<String, dynamic>;
-  }
-
+  // Get KYC documents
   Future<List<Map<String, dynamic>>> myKycDocs() async {
-    final uid = _uid;
-    if (uid == null) return [];
-    final rows = await _supabase
-        .from('kyc_documents')
-        .select()
-        .eq('user_id', uid)
-        .order('created_at', ascending: false);
-    return (rows as List).cast<Map<String, dynamic>>();
+    try {
+      final token = await _authService.getToken();
+      final response = await http.get(
+        Uri.parse('$_baseUrl/kyc'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success']) {
+          return List<Map<String, dynamic>>.from(data['documents'] ?? []);
+        }
+      }
+      return [];
+    } catch (e) {
+      throw Exception('Error fetching KYC documents: $e');
+    }
+  }
+
+  // Upload KYC document
+  Future<bool> uploadKycDoc({
+    required String docType,
+    required Uint8List fileData,
+    required String fileName,
+  }) async {
+    try {
+      final token = await _authService.getToken();
+      
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/kyc/upload'),
+      );
+      
+      request.headers['Authorization'] = 'Bearer $token';
+      request.fields['doc_type'] = docType;
+      
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'document',
+          fileData,
+          filename: fileName,
+        ),
+      );
+
+      final response = await request.send();
+      
+      if (response.statusCode == 200) {
+        final responseBody = await response.stream.bytesToString();
+        final data = json.decode(responseBody);
+        return data['success'] ?? false;
+      }
+      return false;
+    } catch (e) {
+      throw Exception('Error uploading KYC document: $e');
+    }
+  }
+
+  // Add vehicle
+  Future<bool> addVehicle({
+    required String make,
+    required String model,
+    required String plateNumber,
+    required String vehicleType,
+    String? color,
+    int? year,
+  }) async {
+    try {
+      final token = await _authService.getToken();
+      final response = await http.post(
+        Uri.parse('$_baseUrl/vehicles/add'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'make': make,
+          'model': model,
+          'plate_number': plateNumber,
+          'vehicle_type': vehicleType,
+          'color': color,
+          'year': year,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] ?? false;
+      }
+      return false;
+    } catch (e) {
+      throw Exception('Error adding vehicle: $e');
+    }
+  }
+
+  // Delete vehicle
+  Future<bool> deleteVehicle(String vehicleId) async {
+    try {
+      final token = await _authService.getToken();
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/vehicles/$vehicleId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] ?? false;
+      }
+      return false;
+    } catch (e) {
+      throw Exception('Error deleting vehicle: $e');
+    }
+  }
+
+  // Verify phone with OTP
+  Future<bool> verifyPhone(String otp) async {
+    try {
+      final token = await _authService.getToken();
+      final response = await http.post(
+        Uri.parse('$_baseUrl/verify-phone'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'otp': otp,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] ?? false;
+      }
+      return false;
+    } catch (e) {
+      throw Exception('Error verifying phone: $e');
+    }
+  }
+
+  // Start phone verification
+  Future<bool> startPhoneVerification(String phone) async {
+    try {
+      final token = await _authService.getToken();
+      final response = await http.post(
+        Uri.parse('$_baseUrl/start-phone-verification'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'phone': phone,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] ?? false;
+      }
+      return false;
+    } catch (e) {
+      throw Exception('Error starting phone verification: $e');
+    }
   }
 }

@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 
 class ApiService {
-  final String _base = AppConfig.apiBaseUrl;
+  final String _base = AppConfig.baseUrl;
 
   Future<Map<String, dynamic>> health() async {
     final res = await http.get(Uri.parse('$_base/health'))

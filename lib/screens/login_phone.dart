@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/api_client.dart';
+import 'home_shell.dart';
 
 class LoginPhone extends StatefulWidget {
-  const LoginPhone({super.key});
+  final ApiClient api;
+  
+  const LoginPhone({super.key, required this.api});
 
   @override
   State<LoginPhone> createState() => _LoginPhoneState();
@@ -32,9 +36,11 @@ class _LoginPhoneState extends State<LoginPhone> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -48,15 +54,21 @@ class _LoginPhoneState extends State<LoginPhone> {
     }
     setState(() => _sending = true);
     try {
-      await AuthService().confirmSmsCode(
-        verificationId: _verificationId!,
-        smsCode: _otpCtrl.text.trim(),
-      );
-      if (mounted) Navigator.of(context).pop(true);
+      await AuthService().confirmSmsCode(_verificationId!, _otpCtrl.text.trim());
+      if (mounted) {
+        // Navigate to home on successful verification
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => HomeShell(api: widget.api),
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Verify failed: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Verify failed: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }

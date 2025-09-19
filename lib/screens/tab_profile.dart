@@ -1,10 +1,11 @@
-// lib/screens/tab_profile.dart
-import 'dart:typed_data';
+// lib/screens/tab_profile.dart - ALIGNED WITH NEW APP THEME (CONTINUED)
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
-import '../services/profile_repo.dart';
+import '../core/theme/app_theme.dart';
+import 'login_page.dart';
+import 'wallet_screen.dart';
+import 'profile_edit_screen.dart';
 
 class TabProfile extends StatefulWidget {
   const TabProfile({super.key, required this.api});
@@ -16,7 +17,6 @@ class TabProfile extends StatefulWidget {
 
 class _TabProfileState extends State<TabProfile> with SingleTickerProviderStateMixin {
   final _auth = AuthService();
-  final _repo = ProfileRepo();
   late final TabController _tabs;
 
   bool _loading = true;
@@ -24,549 +24,785 @@ class _TabProfileState extends State<TabProfile> with SingleTickerProviderStateM
   List<Map<String, dynamic>> _vehicles = [];
   List<Map<String, dynamic>> _kyc = [];
 
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-
-  // Payments
-  int _balanceInr = 0;
-  List<Map<String, dynamic>> _txns = [];
-
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this); // Profile, Account, Payments
-    _auth.initListenersOnce();
-    _auth.signedInStream.listen((_) => _loadAll());
-    _loadAll();
-  }
-
-  Future<void> _loadAll() async {
-    setState(() => _loading = true);
-    try {
-      final p = await _repo.getMyProfile();
-      final v = await _repo.myVehicles();
-      final k = await _repo.myKycDocs();
-
-      _profile = p;
-      _vehicles = v;
-      _kyc = k;
-
-      _nameCtrl.text = p?['full_name'] ?? '';
-      _phoneCtrl.text = p?['phone'] ?? _auth.firebasePhone ?? '';
-
-      try {
-        _balanceInr = await widget.api.getWalletBalance();
-        _txns = await widget.api.getTransactions();
-      } catch (_) {
-        _balanceInr = 0;
-        _txns = const [];
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _saveProfile() async {
-    final email = AuthService().supabaseEmail;
-    final updated = await _repo.upsertMyProfile(
-      fullName: _nameCtrl.text.trim(),
-      phone: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-      email: email,
-    );
-    setState(() => _profile = updated);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile saved')),
-    );
-  }
-
-  Future<void> _addVehicleDialog() async {
-    final plate = TextEditingController();
-    final model = TextEditingController();
-    final color = TextEditingController();
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Add vehicle'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: plate,
-              decoration: const InputDecoration(labelText: 'Plate'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: model,
-              decoration: const InputDecoration(labelText: 'Model'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: color,
-              decoration: const InputDecoration(labelText: 'Color (optional)'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-
-    if (ok == true) {
-      await _repo.addVehicle(
-        plate: plate.text.trim(),
-        model: model.text.trim(),
-        color: color.text.trim(),
-      );
-      await _loadAll();
-    }
-  }
-
-  Future<void> _deleteVehicle(int id) async {
-    await _repo.deleteVehicle(id);
-    await _loadAll();
-  }
-
-  // Upload helpers
-  Future<void> _uploadDoc({
-    required String docType,
-    required Future<({Uint8List bytes, String filename})?> Function() pick,
-  }) async {
-    final picked = await pick();
-    if (picked == null) return;
-    await _repo.uploadKycDocument(docType: docType, bytes: picked.bytes, filename: picked.filename);
-    await _loadAll();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Uploaded $docType')),
-    );
-  }
-
-  // Stub picker – replace with file_picker if you enable it in pubspec.yaml
-  Future<({Uint8List bytes, String filename})?> _pickWithFilePicker() async {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add file_picker to enable uploads')),
-      );
-    }
-    return null;
-  }
-
-  // Payments actions
-  Future<void> _addFunds() async {
-    try {
-      await widget.api.createTopUpIntent(500);
-      await _loadAll();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Top-up initiated')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Top-up failed: $e')));
-    }
-  }
-
-  Future<void> _withdraw() async {
-    try {
-      await widget.api.requestPayout(500);
-      await _loadAll();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payout requested')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Payout failed: $e')));
-    }
+    _tabs = TabController(length: 2, vsync: this);
+    _loadProfile();
   }
 
   @override
   void dispose() {
     _tabs.dispose();
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadProfile() async {
+    if (!mounted) return;
+    
+    setState(() => _loading = true);
+    try {
+      // Load profile data using the API client
+      final profileResponse = await widget.api.getProfile();
+      _profile = profileResponse;
+
+      // Load vehicles
+      try {
+        final vehiclesResponse = await widget.api.getVehicles();
+        _vehicles = vehiclesResponse;
+      } catch (e) {
+        print('Error loading vehicles: $e');
+        _vehicles = [];
+      }
+
+      // Load KYC documents
+      try {
+        final kycResponse = await widget.api.getKycDocuments();
+        _kyc = kycResponse;
+      } catch (e) {
+        print('Error loading KYC: $e');
+        _kyc = [];
+      }
+
+    } catch (e) {
+      print('Error loading profile: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading profile: $e'),
+            backgroundColor: AppTheme.statusError,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      await _auth.signOut();
+      if (!mounted) return;
+      
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (context) => LoginPage(api: widget.api),
+        ),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Logout failed: $e'),
+          backgroundColor: AppTheme.statusError,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final kycStatus = (_profile?['kyc_status'] ?? 'unverified').toString();
-    final email = AuthService().supabaseEmail ?? '—';
-    final phone = AuthService().firebasePhone ?? _profile?['phone'] ?? '—';
-
     return Scaffold(
+      backgroundColor: AppTheme.surfaceLight,
       appBar: AppBar(
         title: const Text('Profile'),
+        backgroundColor: AppTheme.backgroundLight,
+        foregroundColor: AppTheme.textPrimary,
+        elevation: 0,
+        centerTitle: true,
+        automaticallyImplyLeading: false,
         bottom: TabBar(
           controller: _tabs,
+          labelColor: AppTheme.primaryBlue,
+          unselectedLabelColor: AppTheme.textMuted,
+          indicatorColor: AppTheme.primaryBlue,
+          indicatorWeight: 3,
           tabs: const [
-            Tab(text: 'Profile'),
+            Tab(text: 'About you'),
             Tab(text: 'Account'),
-            Tab(text: 'Payments'),
           ],
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-        controller: _tabs,
-        children: [
-          // ---------------- PROFILE TAB ----------------
-          ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Row(
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const CircleAvatar(radius: 24, child: Icon(Icons.person)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(email, style: Theme.of(context).textTheme.titleMedium),
-                        const SizedBox(height: 2),
-                        Text('Phone: $phone', style: Theme.of(context).textTheme.bodySmall),
-                      ],
+                  CircularProgressIndicator(),
+                  SizedBox(height: AppTheme.spaceLG),
+                  Text('Loading profile...', style: AppTheme.bodyMedium),
+                ],
+              ),
+            )
+          : TabBarView(
+              controller: _tabs,
+              children: [
+                _buildAboutYouTab(),
+                _buildAccountTab(),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildAboutYouTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppTheme.spaceLG),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildProfileHeaderCard(),
+          const SizedBox(height: AppTheme.spaceXL),
+          _buildProfileProgressCard(),
+          const SizedBox(height: AppTheme.spaceXL),
+          _buildVerificationCard(),
+          const SizedBox(height: AppTheme.spaceXL),
+          _buildTravelPreferencesCard(),
+          const SizedBox(height: AppTheme.spaceXL),
+          _buildVehiclesSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppTheme.spaceLG),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildWalletSection(),
+          const SizedBox(height: AppTheme.spaceXL),
+          _buildSecurityCard(),
+          const SizedBox(height: AppTheme.spaceXL),
+          _buildNotificationsCard(),
+          const SizedBox(height: AppTheme.spaceXL),
+          _buildPrivacyCard(),
+          const SizedBox(height: AppTheme.spaceXL),
+          _buildHelpCard(),
+          const SizedBox(height: AppTheme.space4XL),
+          Center(
+            child: ElevatedButton(
+              onPressed: _logout,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.statusError,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMD),
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.logout, size: 18),
+                  SizedBox(width: AppTheme.spaceMD),
+                  Text('Logout', style: TextStyle(fontSize: 16)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileHeaderCard() {
+    final name = _profile?['full_name'] ?? 'Demo User';
+    final memberSince = _profile?['created_at'] != null 
+        ? DateTime.parse(_profile!['created_at']).year.toString()
+        : DateTime.now().year.toString();
+
+    return Container(
+      decoration: AppTheme.cardDecoration(elevation: 2),
+      padding: const EdgeInsets.all(AppTheme.spaceXL),
+      child: Row(
+        children: [
+          Stack(
+            children: [
+              CircleAvatar(
+                radius: 40,
+                backgroundColor: AppTheme.primaryBlue,
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              if (_isProfileVerified())
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: AppTheme.statusSuccess,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 16,
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      color: kycStatus == 'verified'
-                          ? Colors.green.withOpacity(.1)
-                          : Colors.orange.withOpacity(.1),
-                      border: Border.all(
-                        color: kycStatus == 'verified' ? Colors.green : Colors.orange,
+                ),
+            ],
+          ),
+          const SizedBox(width: AppTheme.spaceLG),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: () => _navigateToEditProfile(),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: AppTheme.headingSmall.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
+                      const Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppTheme.spaceXS),
+                Text(
+                  'Member since $memberSince',
+                  style: AppTheme.bodySmall.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppTheme.spaceMD),
+                Row(
+                  children: [
+                    _buildStatItem(Icons.directions_car, '0', 'rides'),
+                    const SizedBox(width: AppTheme.spaceXL),
+                    _buildStatItem(Icons.star, '0.0', 'rating'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(IconData icon, String value, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: AppTheme.primaryBlue),
+        const SizedBox(width: AppTheme.spaceXS),
+        Text(value, style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(width: AppTheme.spaceXS),
+        Text(label, style: AppTheme.bodySmall.copyWith(color: AppTheme.textSecondary)),
+      ],
+    );
+  }
+
+  Widget _buildProfileProgressCard() {
+    final progressItems = [
+      {'title': 'Add phone number', 'completed': _profile?['phone'] != null},
+      {'title': 'Verify email', 'completed': _profile?['email_verified'] == true},
+      {'title': 'Add vehicle', 'completed': _vehicles.isNotEmpty},
+      {'title': 'Add travel preferences', 'completed': _profile?['bio'] != null},
+      {'title': 'Verify ID document', 'completed': _hasVerifiedDocument()},
+    ];
+
+    final completedCount = progressItems.where((item) => item['completed'] == true).length;
+    final progressPercentage = (completedCount / progressItems.length * 100).round();
+
+    return Container(
+      decoration: AppTheme.cardDecoration(elevation: 1).copyWith(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppTheme.primaryBlue.withOpacity(0.05),
+            AppTheme.primaryBlue.withOpacity(0.02),
+          ],
+        ),
+      ),
+      padding: const EdgeInsets.all(AppTheme.spaceXL),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Complete your profile', style: AppTheme.headingSmall),
+          const SizedBox(height: AppTheme.spaceMD),
+          const Text(
+            'This helps build trust, encouraging members to travel with you.',
+            style: AppTheme.bodyMedium,
+          ),
+          const SizedBox(height: AppTheme.spaceLG),
+          Row(
+            children: [
+              Expanded(
+                child: LinearProgressIndicator(
+                  value: progressPercentage / 100,
+                  backgroundColor: AppTheme.textMuted.withOpacity(0.2),
+                  valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                ),
+              ),
+              const SizedBox(width: AppTheme.spaceMD),
+              Text(
+                '$completedCount of ${progressItems.length} complete',
+                style: AppTheme.bodySmall.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spaceLG),
+          if (completedCount < progressItems.length)
+            ...progressItems
+                .where((item) => item['completed'] == false)
+                .take(1)
+                .map((item) => InkWell(
+                      onTap: () => _handleProfileAction(item['title'] as String),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSM),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: AppTheme.spaceXS),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.arrow_forward, size: 16, color: AppTheme.primaryBlue),
+                            const SizedBox(width: AppTheme.spaceMD),
+                            Text(
+                              item['title'] as String,
+                              style: AppTheme.bodyMedium.copyWith(
+                                color: AppTheme.primaryBlue,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ))
+                .toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVerificationCard() {
+    final verifications = [
+      {
+        'title': 'Email address',
+        'verified': _profile?['email_verified'] == true,
+        'value': _profile?['email'] ?? 'Not added',
+      },
+      {
+        'title': 'Phone number',
+        'verified': _profile?['phone_verified'] == true,
+        'value': _profile?['phone'] ?? 'Not added',
+      },
+      {
+        'title': 'Government ID',
+        'verified': _hasVerifiedDocument(),
+        'value': _hasVerifiedDocument() ? 'Verified' : 'Not verified',
+      },
+    ];
+
+    return Container(
+      decoration: AppTheme.cardDecoration(elevation: 1),
+      padding: const EdgeInsets.all(AppTheme.spaceXL),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'You have a Verified Profile',
+            style: AppTheme.headingSmall.copyWith(
+              color: AppTheme.statusSuccess,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spaceLG),
+          for (final verification in verifications)
+            _buildVerificationItem(
+              verification['title'] as String,
+              verification['verified'] as bool,
+              verification['value'] as String,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVerificationItem(String title, bool isVerified, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.spaceMD),
+      child: Row(
+        children: [
+          Icon(
+            isVerified ? Icons.check_circle : Icons.radio_button_unchecked,
+            color: isVerified ? AppTheme.statusSuccess : AppTheme.textMuted,
+            size: 20,
+          ),
+          const SizedBox(width: AppTheme.spaceMD),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w500)),
+                Text(value, style: AppTheme.bodySmall.copyWith(color: AppTheme.textSecondary)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTravelPreferencesCard() {
+    return Container(
+      decoration: AppTheme.cardDecoration(elevation: 1),
+      padding: const EdgeInsets.all(AppTheme.spaceXL),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('About you', style: AppTheme.headingSmall),
+              GestureDetector(
+                onTap: () => _navigateToEditProfile(),
+                child: Text(
+                  'Edit',
+                  style: AppTheme.bodyMedium.copyWith(
+                    color: AppTheme.primaryBlue,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spaceLG),
+          if (_profile?['bio'] != null) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.chat_bubble_outline, size: 20, color: AppTheme.textSecondary),
+                const SizedBox(width: AppTheme.spaceMD),
+                Expanded(
+                  child: Text(_profile!['bio'], style: AppTheme.bodyMedium),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              children: [
+                const Icon(Icons.add, size: 20, color: AppTheme.primaryBlue),
+                const SizedBox(width: AppTheme.spaceMD),
+                GestureDetector(
+                  onTap: () => _navigateToEditProfile(),
+                  child: Text(
+                    'Add a mini bio',
+                    style: AppTheme.bodyMedium.copyWith(color: AppTheme.primaryBlue),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVehiclesSection() {
+    return Container(
+      decoration: AppTheme.cardDecoration(elevation: 1),
+      padding: const EdgeInsets.all(AppTheme.spaceXL),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Vehicles', style: AppTheme.headingSmall),
+              GestureDetector(
+                onTap: _addVehicle,
+                child: Text(
+                  'Add vehicle',
+                  style: AppTheme.bodyMedium.copyWith(
+                    color: AppTheme.primaryBlue,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spaceLG),
+          if (_vehicles.isEmpty) ...[
+            Text(
+              'No vehicles added yet',
+              style: AppTheme.bodyMedium.copyWith(color: AppTheme.textSecondary),
+            ),
+          ] else ...[
+            for (final vehicle in _vehicles) _buildVehicleItem(vehicle),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVehicleItem(Map<String, dynamic> vehicle) {
+    final isCommercial = vehicle['vehicle_type'] == 'commercial';
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppTheme.spaceMD),
+      padding: const EdgeInsets.all(AppTheme.spaceLG),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppTheme.textMuted.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMD),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spaceMD),
+            decoration: BoxDecoration(
+              color: isCommercial ? AppTheme.accentOrange.withOpacity(0.1) : AppTheme.primaryBlue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSM),
+            ),
+            child: Icon(
+              Icons.directions_car,
+              color: isCommercial ? AppTheme.accentOrange : AppTheme.primaryBlue,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spaceMD),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${vehicle['make']} ${vehicle['model']}',
+                  style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  vehicle['plate_number'],
+                  style: AppTheme.bodySmall.copyWith(color: AppTheme.textSecondary),
+                ),
+                if (isCommercial)
+                  Container(
+                    margin: const EdgeInsets.only(top: AppTheme.spaceXS),
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spaceMD, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accentOrange.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(AppTheme.spaceXS),
                     ),
                     child: Text(
-                      kycStatus == 'verified' ? 'Government Verified' : 'Not Verified',
-                      style: TextStyle(
-                        color: kycStatus == 'verified' ? Colors.green[800] : Colors.orange[800],
-                        fontWeight: FontWeight.w600,
+                      'Commercial',
+                      style: AppTheme.bodySmall.copyWith(
+                        color: AppTheme.accentOrange,
+                        fontSize: 10,
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: _nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Full name',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _phoneCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Phone (E.164)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(onPressed: _saveProfile, child: const Text('Save')),
-              ),
-              const SizedBox(height: 24),
-              Text('Vehicles', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              ..._vehicles.map((v) => Card(
-                child: ListTile(
-                  leading: const Icon(Icons.directions_car),
-                  title: Text(v['model']?.toString() ?? 'Vehicle'),
-                  subtitle: Text(
-                    'Plate: ${v['plate'] ?? '—'}'
-                        '${v['color'] != null ? ' • ${v['color']}' : ''}',
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => _deleteVehicle(v['id'] as int),
-                  ),
-                ),
-              )),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _addVehicleDialog,
-                icon: const Icon(Icons.add),
-                label: const Text('Add vehicle'),
-              ),
-              const SizedBox(height: 24),
-              Text('Documents (for admin verification)', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              _docRow('ID Proof', 'id_proof'),
-              _docRow('Driver License', 'driver_license'),
-              _docRow('Vehicle RC', 'vehicle_rc'),
-              const SizedBox(height: 8),
-              Text(
-                'Note: After admin marks as verified, documents will be purged periodically from storage.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-
-          // ---------------- ACCOUNT TAB ----------------
-          ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Text('Login methods', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 6),
-              ListTile(
-                leading: const Icon(Icons.mail_outline),
-                title: const Text('Supabase email/password'),
-                subtitle: Text(email),
-              ),
-              const SizedBox(height: 8),
-              _ChangePasswordCard(),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.phone_android),
-                title: const Text('Firebase phone (OTP)'),
-                subtitle: Text(AuthService().firebasePhone ?? 'Not linked'),
-                trailing: OutlinedButton(
-                  onPressed: _linkPhoneFlow,
-                  child: const Text('Link / Update'),
-                ),
-              ),
-              const SizedBox(height: 24),
-              FilledButton.tonalIcon(
-                icon: const Icon(Icons.logout),
-                onPressed: () async {
-                  await _auth.signOut();
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed out')));
-                },
-                label: const Text('Sign out'),
-              ),
-            ],
-          ),
-
-          // ---------------- PAYMENTS TAB ----------------
-          ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Row(
-                children: [
-                  Text('Deposit balance', style: Theme.of(context).textTheme.titleMedium),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      color: Theme.of(context).colorScheme.surfaceVariant,
-                    ),
-                    child: Text('₹ $_balanceInr'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  FilledButton(onPressed: _addFunds, child: const Text('Add funds')),
-                  const SizedBox(width: 8),
-                  OutlinedButton(onPressed: _withdraw, child: const Text('Withdraw')),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text('Transactions', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 6),
-              if (_txns.isEmpty)
-                const Text('No transactions yet')
-              else
-                ..._txns.map((t) => ListTile(
-                  leading: Icon(
-                    (t['amount_inr'] ?? 0) >= 0 ? Icons.call_received : Icons.call_made,
-                  ),
-                  title: Text('₹ ${t['amount_inr']}'),
-                  subtitle: Text(t['description']?.toString() ?? ''),
-                  trailing: Text(
-                    (t['status'] ?? 'ok').toString(),
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                )),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _docRow(String label, String type) {
-    final latest = _kyc.firstWhere(
-          (e) => e['doc_type'] == type,
-      orElse: () => const {},
-    );
-    final status = (latest['status'] ?? 'none').toString();
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.description_outlined),
-        title: Text(label),
-        subtitle: Text('Status: $status'),
-        trailing: OutlinedButton(
-          onPressed: () => _uploadDoc(docType: type, pick: _pickWithFilePicker),
-          child: const Text('Upload'),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _linkPhoneFlow() async {
-    final phoneCtrl = TextEditingController(text: _phoneCtrl.text);
-    final codeCtrl = TextEditingController();
-    String? verificationId;
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Link phone (OTP)'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: phoneCtrl,
-              decoration: const InputDecoration(labelText: 'Phone (E.164)'),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                OutlinedButton(
-                  onPressed: () async {
-                    try {
-                      verificationId = await _auth.startPhoneVerification(phoneCtrl.text.trim());
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Code sent')));
-                      }
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
-                      }
-                    }
-                  },
-                  child: const Text('Send code'),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: codeCtrl,
-                    decoration: const InputDecoration(labelText: 'Enter code'),
-                  ),
-                ),
               ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Close')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Verify')),
+          ),
+          if (vehicle['is_verified'] == true)
+            const Icon(Icons.verified, color: AppTheme.statusSuccess, size: 20),
         ],
       ),
     );
-
-    if (ok == true) {
-      try {
-        final vid = verificationId;
-        if (vid == null || vid == 'AUTO') {
-          // Either auto-verified or not requested
-        } else {
-          await _auth.confirmSmsCode(vid, codeCtrl.text.trim());
-        }
-        await _repo.upsertMyProfile(phone: phoneCtrl.text.trim());
-        await _loadAll();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone linked')));
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verify failed: $e')));
-      }
-    }
-  }
-}
-
-class _ChangePasswordCard extends StatefulWidget {
-  @override
-  State<_ChangePasswordCard> createState() => _ChangePasswordCardState();
-}
-
-class _ChangePasswordCardState extends State<_ChangePasswordCard> {
-  final _pwd1 = TextEditingController();
-  final _pwd2 = TextEditingController();
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _pwd1.dispose();
-    _pwd2.dispose();
-    super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Card(
+  Widget _buildWalletSection() {
+    return Container(
+      decoration: AppTheme.cardDecoration(elevation: 1),
+      padding: const EdgeInsets.all(AppTheme.spaceXL),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Wallet', style: AppTheme.headingSmall),
+          const SizedBox(height: AppTheme.spaceLG),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spaceLG),
+            decoration: AppTheme.primaryGradient(),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Available Balance', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                SizedBox(height: AppTheme.spaceXS),
+                Text('₹0.00', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppTheme.spaceLG),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const WalletScreen()),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMD)),
+            ),
+            child: const Text('Open Wallet'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSecurityCard() {
+    return _buildSettingsCard('Security', [
+      {'icon': Icons.lock, 'title': 'Password', 'subtitle': 'Change your account password', 'action': 'password'},
+    ]);
+  }
+
+  Widget _buildNotificationsCard() {
+    return _buildSettingsCard('Notifications', [
+      {'icon': Icons.notifications, 'title': 'Push Notifications', 'subtitle': 'Manage notification preferences', 'action': 'notifications'},
+    ]);
+  }
+
+  Widget _buildPrivacyCard() {
+    return _buildSettingsCard('Privacy', [
+      {'icon': Icons.visibility, 'title': 'Profile Visibility', 'subtitle': 'Control who can see your profile', 'action': 'privacy'},
+    ]);
+  }
+
+  Widget _buildHelpCard() {
+    return _buildSettingsCard('Help & Support', [
+      {'icon': Icons.help, 'title': 'Help Center', 'subtitle': 'Get help and find answers', 'action': 'help'},
+    ]);
+  }
+
+  Widget _buildSettingsCard(String title, List<Map<String, dynamic>> items) {
+    return Container(
+      decoration: AppTheme.cardDecoration(elevation: 1),
+      padding: const EdgeInsets.all(AppTheme.spaceXL),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppTheme.headingSmall),
+          const SizedBox(height: AppTheme.spaceLG),
+          for (final item in items)
+            _buildAccountItem(
+              icon: item['icon'] as IconData,
+              title: item['title'] as String,
+              subtitle: item['subtitle'] as String,
+              onTap: () => _handleSettingsAction(item['action'] as String),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppTheme.radiusSM),
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+        padding: const EdgeInsets.symmetric(vertical: AppTheme.spaceMD),
+        child: Row(
           children: [
-            Row(
-              children: [
-                const Icon(Icons.lock_outline),
-                const SizedBox(width: 8),
-                Text('Change Supabase password', style: Theme.of(context).textTheme.titleSmall),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _pwd1,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'New password'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _pwd2,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Confirm password'),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                onPressed: _busy ? null : _submit,
-                child: _busy
-                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Update'),
+            Icon(icon, color: AppTheme.textSecondary, size: 24),
+            const SizedBox(width: AppTheme.spaceLG),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppTheme.bodyMedium),
+                  Text(subtitle, style: AppTheme.bodySmall),
+                ],
               ),
             ),
+            const Icon(Icons.arrow_forward_ios, color: AppTheme.textMuted, size: 16),
           ],
         ),
       ),
     );
   }
 
-  Future<void> _submit() async {
-    if (_pwd1.text != _pwd2.text) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
-      return;
+  // Helper methods
+  bool _isProfileVerified() {
+    final emailVerified = _profile?['email_verified'] == true;
+    final phoneVerified = _profile?['phone_verified'] == true;
+    final hasDocument = _hasVerifiedDocument();
+    return emailVerified && phoneVerified && hasDocument;
+  }
+
+  bool _hasVerifiedDocument() {
+    return _kyc.any((doc) => doc['verification_status'] == 'approved');
+  }
+
+  void _navigateToEditProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileEditScreen(
+          api: widget.api,
+          profile: _profile,
+          onProfileUpdated: (updatedProfile) {
+            setState(() {
+              _profile = updatedProfile;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  void _handleProfileAction(String action) {
+    switch (action) {
+      case 'Add phone number':
+      case 'Verify email':
+      case 'Add travel preferences':
+        _navigateToEditProfile();
+        break;
+      case 'Add vehicle':
+        _addVehicle();
+        break;
+      case 'Verify ID document':
+        _uploadDocument();
+        break;
     }
-    setState(() => _busy = true);
-    try {
-      await AuthService().updateSupabasePassword(_pwd1.text);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password updated')));
-      _pwd1.clear();
-      _pwd2.clear();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+  }
+
+  void _handleSettingsAction(String action) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${action.substring(0, 1).toUpperCase()}${action.substring(1)} feature coming soon'),
+        backgroundColor: AppTheme.statusInfo,
+      ),
+    );
+  }
+
+  void _addVehicle() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Add vehicle feature coming soon'),
+        backgroundColor: AppTheme.statusInfo,
+      ),
+    );
+  }
+
+  void _uploadDocument() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Document upload feature coming soon'),
+        backgroundColor: AppTheme.statusInfo,
+      ),
+    );
   }
 }
